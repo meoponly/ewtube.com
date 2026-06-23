@@ -173,9 +173,9 @@ body.light-mode .hdr-btn:hover{background:rgba(0,0,0,.07)}
 body.light-mode #sidebar{background:var(--bg)}
 body.light-mode .sb-item:hover,.light-mode .sb-ch-item:hover{background:rgba(0,0,0,.06)}
 body.light-mode .sb-item.active{background:rgba(0,0,0,.07)}
-body.light-mode .ctx-menu{background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.15)}
-body.light-mode .ctx-item:hover{background:rgba(0,0,0,.05)}
-body.light-mode .ctx-divider{background:var(--border)}
+body.light-mode .vmenu{background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.15)}
+body.light-mode .vmenu-item:hover{background:rgba(0,0,0,.05)}
+body.light-mode .vmenu-divider{background:var(--border)}
 body.light-mode .settings-box{background:var(--bg);border-color:var(--border)}
 body.light-mode .settings-header{border-color:var(--border)}
 body.light-mode .settings-divider{border-color:var(--border)}
@@ -583,10 +583,13 @@ body.sidebar-collapsed #watchlater-section{
   cursor:pointer;flex-shrink:0;margin-top:1px;margin-left:2px;
   border:none;color:var(--text2);background:transparent;
 }
-.vid-card:hover .vid-menu-btn{opacity:1}
-.vid-menu-btn:hover{background:rgba(255,255,255,.1);color:var(--text)}
-body.light-mode .vid-menu-btn:hover{background:rgba(0,0,0,.08)}
-.vid-menu-btn .ms{font-size:18px;font-variation-settings:'FILL' 0,'wght' 300,'GRAD' -25,'opsz' 18}
+.vid-card:hover .vid-menu-btn,
+.search-card:hover .vid-menu-btn,
+.history-item:hover .vid-menu-btn,
+.history-menu-btn{opacity:1}
+.vid-menu-btn:hover,.history-menu-btn:hover{background:rgba(255,255,255,.1);color:var(--text)}
+body.light-mode .vid-menu-btn:hover,body.light-mode .history-menu-btn:hover{background:rgba(0,0,0,.08)}
+.vid-menu-btn .ms,.history-menu-btn .ms{font-size:18px;font-variation-settings:'FILL' 0,'wght' 300,'GRAD' -25,'opsz' 18}
 
 /* ── WATCH LATER SECTION ── */
 .wl-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
@@ -601,35 +604,59 @@ body.light-mode .vid-menu-btn:hover{background:rgba(0,0,0,.08)}
 .wl-empty-sub{font-size:13px}
 
 /* ── CONTEXT MENU ── */
-.ctx-menu{
-  position:fixed;z-index:999;
-  background:var(--surface);border:1px solid var(--border);border-radius:12px;
-  box-shadow:0 8px 32px rgba(0,0,0,.6);
-  padding:8px 0;min-width:220px;
-  animation:ctxIn .12s ease-out;
+/* ── VIDEO CONTEXT MENU (vmenu) — fresh implementation ── */
+.vmenu{
+  position:fixed;z-index:9999;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.55);
+  padding:6px 0;min-width:240px;max-width:300px;
+  animation:vmenuIn .12s cubic-bezier(.2,0,.2,1);
+  outline:none;
 }
-@keyframes ctxIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
-.ctx-item{
-  display:flex;align-items:center;gap:16px;
-  padding:8px 16px;font-size:14px;cursor:pointer;transition:background .1s;
-  color:var(--text);white-space:nowrap;
+@keyframes vmenuIn{from{opacity:0;transform:scale(.96) translateY(-4px)}to{opacity:1;transform:scale(1) translateY(0)}}
+body.light-mode .vmenu{background:#fff;box-shadow:0 8px 28px rgba(0,0,0,.14);}
+.vmenu-header{
+  padding:12px 16px 8px;border-bottom:1px solid var(--border);margin-bottom:4px;
 }
-.ctx-item:hover{background:rgba(255,255,255,.07)}
-.ctx-item .ms{font-size:20px;color:var(--text2);font-variation-settings:'FILL' 0,'wght' 300,'GRAD' -25,'opsz' 20}
-.ctx-item.danger{color:var(--accent)}
-.ctx-item.danger .ms{color:var(--accent)}
-.ctx-divider{height:1px;background:var(--border);margin:6px 0}
-/* Sub-menu for playlist picker */
-.ctx-sub{padding:0 0 4px}
-.ctx-sub-title{padding:6px 16px 4px;font-size:12px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:.5px}
-.ctx-pl-item{
+.vmenu-header-title{
+  font-size:13.5px;font-weight:600;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.vmenu-header-sub{font-size:12px;color:var(--text3);margin-top:2px;}
+.vmenu-item{
+  display:flex;align-items:center;gap:14px;
+  padding:9px 16px;font-size:14px;cursor:pointer;
+  color:var(--text);white-space:nowrap;transition:background .1s;
+  border:none;background:none;width:100%;text-align:left;font-family:inherit;
+}
+.vmenu-item:hover{background:rgba(255,255,255,.07);}
+body.light-mode .vmenu-item:hover{background:rgba(0,0,0,.05);}
+.vmenu-item .ms{font-size:20px;color:var(--text2);font-variation-settings:'FILL' 0,'wght' 300,'GRAD' -25,'opsz' 20;flex-shrink:0;}
+.vmenu-item.active .ms{color:#2eca6a;}
+.vmenu-item.active{color:#2eca6a;}
+.vmenu-item.danger{color:#e57373;}
+.vmenu-item.danger .ms{color:#e57373;}
+.vmenu-divider{height:1px;background:var(--border);margin:4px 0;}
+.vmenu-section-label{
+  padding:8px 16px 4px;font-size:11px;color:var(--text3);
+  font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+}
+.vmenu-pl-item{
   display:flex;align-items:center;gap:10px;
-  padding:6px 16px;font-size:14px;cursor:pointer;transition:background .1s;
+  padding:7px 16px;font-size:13.5px;cursor:pointer;
+  transition:background .1s;color:var(--text);
+  border:none;background:none;width:100%;text-align:left;font-family:inherit;
 }
-.ctx-pl-item:hover{background:rgba(255,255,255,.1)}
-.ctx-pl-check{width:18px;height:18px;border-radius:3px;border:2px solid var(--text3);flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.ctx-pl-check.checked{background:var(--accent);border-color:var(--accent)}
-.ctx-pl-check.checked::after{content:'✓';color:#fff;font-size:11px;font-weight:700}
+.vmenu-pl-item:hover{background:rgba(255,255,255,.07);}
+body.light-mode .vmenu-pl-item:hover{background:rgba(0,0,0,.05);}
+.vmenu-pl-check{
+  width:18px;height:18px;border-radius:4px;
+  border:1.5px solid var(--text3);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .1s;
+}
+.vmenu-pl-check.on{background:var(--accent);border-color:var(--accent);}
+.vmenu-pl-check.on::after{content:'✓';color:#fff;font-size:10px;font-weight:700;}
 
 .q-clear-btn{
   width:36px;height:36px;border-radius:50%;flex-shrink:0;
@@ -2854,8 +2881,8 @@ if(localStorage.getItem('ewtube_was_authed')==='1'){
   </div>
 </div>
 
-<!-- Context Menu -->
-<div id="ctx-menu" class="ctx-menu" style="display:none"></div>
+
+<!-- Context Menu handled dynamically by vmenu system -->
 
 <script>
 'use strict';
@@ -3401,7 +3428,6 @@ window.deleteSearchHistory=function(q){
 let plNextTokenMap    = {};
 
 // Context menu state
-let ctxData = {};
 
 // ── UTILS ──
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
@@ -4017,377 +4043,158 @@ function showTrNotif(icon, msg, type='success'){
 }
 
 // ── CONTEXT MENU ──
-function closeCtx(){document.getElementById('ctx-menu').style.display='none';ctxData={}}
-document.addEventListener('click',e=>{if(!e.target.closest('#ctx-menu'))closeCtx()});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeCtx()});
+// ══════════════════════════════════════════
+// VMENU — fresh video context menu system
+// ══════════════════════════════════════════
+let _vmenu = null;
 
-
-
-// ── SETUP ──
-function initSetup(){
-  document.body.classList.add('sb-unlocked');
-  if(window._sbCollapsedPref)document.body.classList.add('sidebar-collapsed');
-  renderSidebarChannels();
-  // Restore notification dot if there are unread notifications
-  if(notifItems.some(n=>n.unread)){
-    const dot=document.getElementById('notif-dot');
-    if(dot)dot.style.display='';
-  }
-  if(channels.length){
-    resolveChannelIds(true).then(()=>{
-      renderSidebarChannels();
-      if(currentSection==='home')renderHome();
-    }).catch(()=>{});
-  }
-  // If the URL has a route, let the router handle it; otherwise show home
-  if(location.search){
-    navigateToQuery();
-  } else {
-    showSection('home');
-  }
+function closeVmenu(){
+  if(_vmenu){ _vmenu.remove(); _vmenu=null; }
+  document.removeEventListener('click', _vmenuOutside, true);
+  document.removeEventListener('keydown', _vmenuKey);
 }
-function addChannel(){
-  const inp=document.getElementById('ch-input');
-  if(!inp)return;
-  const name=inp.value.trim();
-  if(!name||channels.map(c=>c.toLowerCase()).includes(name.toLowerCase())){inp.value='';return}
-  channels.push(name);saveLS(LS_CH,channels);inp.value='';
+function _vmenuOutside(e){
+  if(_vmenu && !_vmenu.contains(e.target)) closeVmenu();
 }
-function removeChannel(i){channels.splice(i,1);saveLS(LS_CH,channels);}
-
-function openAddChannelModal(){
-  document.getElementById('add-channel-input').value='';
-  document.getElementById('add-channel-status').textContent='';
-  document.getElementById('add-channel-btn').disabled=false;
-  document.getElementById('add-channel-btn').textContent='Add';
-  document.getElementById('add-channel-modal').style.display='flex';
-  setTimeout(()=>document.getElementById('add-channel-input').focus(),80);
-}
-function closeAddChannelModal(){document.getElementById('add-channel-modal').style.display='none'}
-async function addChannelFromModal(){
-  const inp=document.getElementById('add-channel-input');
-  const status=document.getElementById('add-channel-status');
-  const btn=document.getElementById('add-channel-btn');
-  const name=inp.value.trim();
-  if(!name)return;
-  if(isFocusModeActive()){
-    status.textContent='🔒 Focus Mode: new subscriptions disabled for '+formatFocusRemaining();
-    status.style.color='#4caf50';return;
-  }
-  if(matchesBlockedKeyword(name)){
-    status.textContent='🚫 This channel is blocked by a keyword.';status.style.color='#f44';return;
-  }
-  if(channels.map(c=>c.toLowerCase()).includes(name.toLowerCase())){
-    status.textContent='Channel already added.';status.style.color='var(--text3)';return;
-  }
-  btn.disabled=true;btn.textContent='Resolving…';status.textContent='Looking up channel…';status.style.color='var(--text3)';
-  channels.push(name);saveLS(LS_CH,channels);
-  try{
-    await resolveChannelIds(true);
-    // After resolve, check if the resolved title is also blocked
-    const resolvedTitle=channelMeta[name]?.title||'';
-    if(matchesBlockedKeyword(resolvedTitle)){
-      channels=channels.filter(c=>c!==name);saveLS(LS_CH,channels);
-      closeAddChannelModal();
-      showToast('🚫 This channel is blocked by a keyword.');
-      return;
-    }
-    renderSidebarChannels();
-    if(currentSection==='home')renderHome();
-    closeAddChannelModal();
-    showToast(`✓ "${name}" added to sidebar`);
-  }catch(e){
-    renderSidebarChannels();
-    closeAddChannelModal();
-    showToast(`Added "${name}" (resolve failed — add API key in Settings)`);
-  }
-}
-async function resolveChannelIds(onlyUnresolved=false){
-  const toResolve=onlyUnresolved?channels.filter(n=>!channelIds[n]):channels;
-  for(const name of toResolve){
-    try{
-      let chId;
-      // If the user typed a raw Channel ID (starts with UC and ~24 chars), use it directly
-      if(/^UC[\w-]{20,}$/.test(name.trim())){
-        chId=name.trim();
-      }else{
-        const d=await api(`search?part=snippet&type=channel&q=${encodeURIComponent(name)}&maxResults=1`);
-        if(d.items?.[0]){
-          chId=d.items[0].snippet.channelId||d.items[0].id.channelId;
-        }
-      }
-      if(!chId){console.warn('resolve: no channel found for',name);continue;}
-      channelIds[name]=chId;
-      const full=await api(`channels?part=snippet,brandingSettings,statistics,contentDetails&id=${chId}`);
-      if(full.items?.[0]){
-        const ch=full.items[0];
-        const bannerBase=ch.brandingSettings?.image?.bannerExternalUrl||'';
-        channelMeta[name]={
-          thumb:ch.snippet.thumbnails.high?.url||ch.snippet.thumbnails.medium?.url||ch.snippet.thumbnails.default?.url||'',
-          subs:ch.statistics.subscriberCount||'0',handle:ch.snippet.customUrl||'',
-          banner:bannerBase?bannerBase+'=w2560-nd-v1':'',
-          title:ch.snippet.title||name
-        };
-        const uplId=ch.contentDetails?.relatedPlaylists?.uploads;
-        if(uplId)uploadCache[chId]=uplId;
-      }
-    }catch(e){console.warn('resolve failed:',name,e)}
-  }
-  saveLS(LS_IDS,channelIds);saveLS(LS_META,channelMeta);saveLS(LS_UPLOAD,uploadCache);
+function _vmenuKey(e){
+  if(e.key==='Escape'){ e.stopPropagation(); closeVmenu(); }
 }
 
-// ── SIDEBAR ──
-function renderSidebarChannels(){
-  const el=document.getElementById('sb-channels');
-  // Active channels sorted by affinity (most used first), hidden at the end
-  const active=channels.filter(c=>!isHidden(c)).sort((a,b)=>(affinity[channelIds[b]]||0)-(affinity[channelIds[a]]||0));
-  const hidden=channels.filter(c=>isHidden(c));
-  const all=[...active,...hidden];
-  el.innerHTML=all.map(c=>{
-    const meta=channelMeta[c];
-    const h=isHidden(c);
-    const notifOn=!!chNotifs[c];
-    return`<div class="sb-ch-item${h?' hidden-ch':''}" data-ch-name="${esc(meta?.title||c)}" onclick="openChannel('${esc(c).replace(/'/g,"\\'")}')">
-      ${avatarHtml(c,meta,'sb-ch-avatar')}
-      <span class="sb-ch-name">${esc(meta?.title||c)}</span>
-      ${h?'<span class="ms sz16" style="color:var(--text3);flex-shrink:0" title="Hidden from Home">visibility_off</span>':''}
-      <button class="sb-ch-bell${notifOn?' notif-on':''}" title="${notifOn?'Notifications on':'Notifications off'}"
-        onclick="event.stopPropagation();toggleChNotif(event,'${esc(c).replace(/'/g,"\\'")}')">
-        <span class="ms sz16">${notifOn?'notifications':'notifications_none'}</span>
-      </button>
-      <button class="sb-ch-unsub-btn" onclick="event.stopPropagation();unsubscribeChannel('${esc(c).replace(/'/g,"\\'")}',this)" title="Unsubscribe">
-        <span class="ms">do_not_disturb_on</span>
-      </button>
-    </div>`;
-  }).join('');
+function _vmenuPosition(el, anchorEl){
+  document.body.appendChild(el);
+  const rect = anchorEl.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const mw = el.offsetWidth, mh = el.offsetHeight;
+  let x = rect.left, y = rect.bottom + 4;
+  if(x + mw > vw - 8) x = rect.right - mw;
+  if(y + mh > vh - 8) y = rect.top - mh - 4;
+  if(x < 8) x = 8;
+  if(y < 8) y = 8;
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
 }
 
-// ── NAV ──
-function setPageTitle(t){document.title=t?t+' - Ewtube':'Ewtube';}
-function showSection(s){
-  const displaySection=s==='home'?'search':s;
-  currentSection=displaySection;
-  // Update tab title
-  if(s==='home')setPageTitle('');
-  else if(s==='history')setPageTitle('Watch History');
-  else if(s==='myplaylists')setPageTitle('My Playlists');
-  else if(s==='watchlater')setPageTitle('Watch Later');
-  else setPageTitle('');
-  // Update URL (query-param routing like YouTube)
-  const pageMap={search:'',history:'history',myplaylists:'playlists',watchlater:'watchlater'};
-  if(s==='home')history.replaceState(null,'',location.pathname);
-  else history.pushState(null,'',location.pathname+'?page='+(pageMap[displaySection]??displaySection));
-  ['search-section','history-section','myplaylists-section','watchlater-section'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.style.display='none';
-  });
-  document.getElementById('channel-page').style.display='none';
-  document.querySelectorAll('.sb-item').forEach(el=>{
-    const navId=el.id;
-    const isActive=
-      (navId==='nav-home'&&(s==='home'||s==='search'))||
-      (navId==='nav-'+displaySection&&navId!=='nav-home');
-    el.classList.toggle('active',isActive);
-    const ms=el.querySelector('.ms');
-    if(ms){if(isActive)ms.classList.add('filled');else ms.classList.remove('filled');}
-  });
-  if(displaySection==='search'){
-    document.getElementById('search-section').style.display='block';
-    if(s==='home'){
-      // Show home feed, hide search results
-      document.getElementById('home-feed-wrap').style.display='block';
-      document.getElementById('search-results-wrap').style.display='none';
-      renderHome();
-    }else{
-      // s==='search' — show search results, hide home feed
-      document.getElementById('home-feed-wrap').style.display='none';
-      document.getElementById('search-results-wrap').style.display='block';
-      setTimeout(()=>document.getElementById('q')?.focus(),50);
-    }
+function openVideoCtx(e, vid, title, channel, thumb, dur, publishedAt){
+  e.preventDefault(); e.stopPropagation();
+  closeVmenu();
+
+  const inWL = isInWL(vid);
+  const m = document.createElement('div');
+  m.className = 'vmenu';
+  m.tabIndex = -1;
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'vmenu-header';
+  hdr.innerHTML = `<div class="vmenu-header-title">${esc(title||'Video')}</div>
+    <div class="vmenu-header-sub">${esc(channel||'')}</div>`;
+  m.appendChild(hdr);
+
+  function item(icon, label, cls, onClick){
+    const btn = document.createElement('button');
+    btn.className = 'vmenu-item' + (cls?' '+cls:'');
+    btn.innerHTML = `<span class="ms">${icon}</span><span>${label}</span>`;
+    btn.addEventListener('click', ev=>{ ev.stopPropagation(); closeVmenu(); onClick(); });
+    m.appendChild(btn);
+    return btn;
   }
-  else if(displaySection==='history'){document.getElementById('history-section').style.display='block';renderHistory();renderSearchHistoryList();}
-  else if(displaySection==='myplaylists'){document.getElementById('myplaylists-section').style.display='block';renderMyPlaylists();}
-  else if(displaySection==='watchlater'){document.getElementById('watchlater-section').style.display='block';renderWatchLater();}
-}
+  function divider(){ const d=document.createElement('div'); d.className='vmenu-divider'; m.appendChild(d); }
 
-// ── HOME ──
-async function renderHome(){
-  ytLoadStart();
-  const chipsWrap=document.getElementById('home-chips-wrap');
-  const feed=document.getElementById('home-feed');
-  const feedTitle=document.getElementById('home-feed-title');
-
-  chipsWrap.innerHTML='';
-  renderPinnedSection();
-  renderContinueWatching();
-
-  // Non-hidden, non-blocked channels that have been resolved
-  const activeChips=channels.filter(c=>!isHidden(c));
-  const visibleIds=activeChips.map(c=>channelIds[c]).filter(Boolean);
-
-  if(!visibleIds.length){
-    feedTitle.style.display='none';
-    feed.innerHTML=`<div style="text-align:center;padding:80px 0;color:var(--text3)">
-      <span class="ms" style="font-size:64px;display:block;margin-bottom:16px">search</span>
-      <div style="font-size:16px;font-weight:500;color:var(--text2);margin-bottom:8px">Search anything on Ewtube</div>
-      <div style="font-size:14px">Use the search bar above — all results are shown except blocked channels</div>
-    </div>`;
-    document.getElementById('home-load-more').style.display='none';
-    ytLoadEnd();
-    return;
-  }
-
-  feedTitle.style.display='block';
-  feed.innerHTML=skelVidGrid(8);
-  document.getElementById('home-load-more').style.display='none';
-
-  try{
-    let allItems=[];
-    // Fetch all channels in parallel instead of sequentially
-    const results=await Promise.all(visibleIds.map(chId=>
-      fetchUploads(chId,50).then(items=>{items.forEach(it=>{it._chId=chId});return items;}).catch(()=>[])
-    ));
-    allItems=results.flat();
-    allItems=allItems.filter(i=>{
-      const title=i.snippet?.title||'';
-      const ch=i.snippet?.videoOwnerChannelTitle||i.snippet?.channelTitle||'';
-      return!isShort(title)&&!notInterested.has(i.contentDetails?.videoId||i.snippet?.resourceId?.videoId)&&!isBlockedContent(title,ch);
-    });
-    if(!allItems.length){feed.innerHTML='<p style="color:var(--text3);padding:16px 0">No videos found.</p>';ytLoadEnd();return}
-    const vids=allItems.map(i=>i.contentDetails?.videoId||i.snippet?.resourceId?.videoId).filter(Boolean);
-    const statsMap=await fetchVideoStats(vids);
-    allItems=allItems.filter(i=>{
-      const v=i.contentDetails?.videoId||i.snippet?.resourceId?.videoId;
-      return!isShortDuration(statsMap[v]?.dur||'');
-    });
-    allItems.forEach(i=>{
-      i._score=scoreVideo(i,i._chId);
-      i._vid=i.contentDetails?.videoId||i.snippet?.resourceId?.videoId;
-      i._stats=statsMap[i._vid]||{};
-    });
-    allItems.sort((a,b)=>b._score-a._score);
-    homeFeedItems=allItems;homeFeedPage=0;feed.innerHTML='<div class="vid-grid"></div>';
-    renderHomePage();
-    if(homeFeedItems.length>HOME_PAGE_SIZE)document.getElementById('home-load-more').style.display='block';
-  }catch(e){feed.innerHTML=`<p style="color:var(--text3)">Error: ${esc(e.message)}</p>`}
-  finally{ytLoadEnd();}
-}
-
-function renderHomePage(){
-  const feed=document.getElementById('home-feed');
-  const start=homeFeedPage*HOME_PAGE_SIZE;
-  const slice=homeFeedItems.slice(start,start+HOME_PAGE_SIZE);
-  if(!slice.length)return;
-  let grid=feed.querySelector('.vid-grid');
-  if(!grid){grid=document.createElement('div');grid.className='vid-grid';feed.appendChild(grid);}
-  let batchHtml='';
-  slice.forEach(item=>{
-    const vid=item._vid;const s=item.snippet||{};const st=item._stats||{};
-    const chName=findChName(item._chId||'');
-    const meta=channelMeta[chName]||null;
-    const thumb=bestThumb(s.thumbnails,vid);
-    const title=s.title||'';
-    const channel=s.videoOwnerChannelTitle||s.channelTitle||chName;
-    batchHtml+=videoCard(vid,title,channel,thumb,s.publishedAt,st.views,st.dur,meta,item._chId);
-    // Push notification if bell is on for this channel
-    if(chName&&chNotifs[chName]){
-      pushNotifFromFeed(vid,title,channel,thumb,meta?.thumb||'',new Date(s.publishedAt||Date.now()).getTime());
+  // Watch Later
+  const wlBtn = document.createElement('button');
+  wlBtn.className = 'vmenu-item' + (inWL?' active':'');
+  wlBtn.innerHTML = `<span class="ms">${inWL?'check_circle':'watch_later'}</span><span>${inWL?'Saved to Watch Later':'Save to Watch Later'}</span>`;
+  wlBtn.addEventListener('click', ev=>{ ev.stopPropagation(); closeVmenu();
+    if(isInWL(vid)){
+      watchLater = watchLater.filter(v=>v.vid!==vid); saveWL(); showToast('Removed from Watch Later');
+    } else {
+      watchLater.unshift({vid,title,channel,thumb,dur:dur||'',ts:Date.now()});
+      if(watchLater.length>500) watchLater=watchLater.slice(0,500);
+      saveWL(); showTrNotif('watch_later','Saved to Watch Later');
     }
   });
-  grid.insertAdjacentHTML('beforeend',batchHtml);
-  homeFeedPage++;
-  document.getElementById('home-load-more').style.display=homeFeedItems.length>homeFeedPage*HOME_PAGE_SIZE?'block':'none';
-  // Ensure avatars are cached for all channels in this page
-  const pageChIds=slice.map(i=>i._chId).filter(id=>id&&!chAvatarCache[id]&&!channelMeta[findChName(id)]?.thumb);
-  if(pageChIds.length)fetchAndCacheAvatars(pageChIds);
-}
-function loadMoreHome(){
-  if(homeFeedItems.length>homeFeedPage*HOME_PAGE_SIZE){
-    renderHomePage();
-  } else {
-    renderHome();
+  m.appendChild(wlBtn);
+
+  divider();
+
+  // Playlists
+  if(myPlaylists.length){
+    const lbl = document.createElement('div');
+    lbl.className = 'vmenu-section-label';
+    lbl.textContent = 'Add to playlist';
+    m.appendChild(lbl);
+    myPlaylists.forEach(pl=>{
+      const inPl = pl.videos.some(v=>v.vid===vid);
+      const plBtn = document.createElement('button');
+      plBtn.className = 'vmenu-pl-item';
+      plBtn.innerHTML = `<span class="vmenu-pl-check${inPl?' on':''}"></span><span>${esc(pl.name)}</span>`;
+      plBtn.addEventListener('click', ev=>{ ev.stopPropagation(); closeVmenu();
+        addVideoToPlaylist(pl.id, vid, title, channel, thumb, dur, publishedAt);
+      });
+      m.appendChild(plBtn);
+    });
+    divider();
   }
+
+  // Open on YouTube
+  item('open_in_new', 'Open on YouTube', '', ()=>{ window.open('https://www.youtube.com/watch?v='+encodeURIComponent(vid),'_blank'); });
+
+  // Copy link
+  item('link', 'Copy link', '', ()=>{
+    navigator.clipboard?.writeText('https://www.youtube.com/watch?v='+vid).then(()=>showToast('Link copied')).catch(()=>showToast('Copy failed'));
+  });
+
+  // Not interested
+  divider();
+  item('not_interested', 'Not interested', 'danger', ()=>markNotInterested(vid));
+
+  _vmenu = m;
+  _vmenuPosition(m, e.currentTarget);
+  setTimeout(()=>{
+    document.addEventListener('click', _vmenuOutside, true);
+    document.addEventListener('keydown', _vmenuKey);
+  }, 0);
 }
 
-// ── VIDEO CARD CONTEXT MENU (three-dot ⋮) ──
-function openVideoCtx(e,vid,title,channel,thumb,dur,publishedAt){
-  e.preventDefault();e.stopPropagation();
-  ctxData={vid,title,channel,thumb,dur,publishedAt};
-  const menu=document.getElementById('ctx-menu');
-  const inWL=isInWL(vid);
-  const vd=JSON.stringify(vid);const vt=JSON.stringify(title);const vc=JSON.stringify(channel);
-  const vth=JSON.stringify(thumb||'');const vdr=JSON.stringify(dur||'');const vpub=JSON.stringify(publishedAt||'');
-  // Build playlist sub-items
-  const plItems=myPlaylists.map(pl=>{
-    const inPl=pl.videos.some(v=>v.vid===vid);
-    return`<div class="ctx-pl-item" onclick="closeCtx();addVideoToPlaylist('${esc(pl.id)}',${vd},${vt},${vc},${vth},${vdr},${vpub})">
-      <div class="ctx-pl-check${inPl?' checked':''}"></div>
-      <span>${esc(pl.name)}</span>
-    </div>`;
-  }).join('');
-  menu.innerHTML=`
-    <div class="ctx-item" onclick="toggleWatchLaterCtx(${vd},${vt},${vc},${vth},${vdr})">
-      <span class="ms">${inWL?'check_circle':'watch_later'}</span>
-      <span style="color:${inWL?'#2eca6a':'inherit'}">${inWL?'Saved to Watch Later':'Save to Watch Later'}</span>
-    </div>
-    <div class="ctx-divider"></div>
-    ${myPlaylists.length?`
-    <div class="ctx-sub">
-      <div class="ctx-sub-title">Add to playlist</div>
-      ${plItems}
-    </div>
-    <div class="ctx-divider"></div>`:''}
-    <div class="ctx-item" onclick="closeCtx();markNotInterested(${vd})">
-      <span class="ms">not_interested</span>Not interested
-    </div>`;
-  menu.style.display='block';
-  const rect=e.currentTarget.getBoundingClientRect();
-  let x=rect.left,y=rect.bottom+4;
-  menu.style.left=x+'px';menu.style.top=y+'px';
-  requestAnimationFrame(()=>{
-    const r=menu.getBoundingClientRect();
-    const vw=window.innerWidth,vh=window.innerHeight;
-    if(r.right>vw-8)menu.style.left=(x-r.width+32)+'px';
-    if(r.bottom>vh-8)menu.style.top=(rect.top-r.height-4)+'px';
-  });
-}
-function toggleWatchLaterCtx(vid,title,channel,thumb,dur){
-  const inWL=isInWL(vid);
-  if(inWL){
-    watchLater=watchLater.filter(v=>v.vid!==vid);
-    saveWL();
-    showToast('Removed from Watch Later');
-  }else{
-    watchLater.unshift({vid,title,channel,thumb,dur:dur||'',ts:Date.now()});
-    if(watchLater.length>500)watchLater=watchLater.slice(0,500);
-    saveWL();
-    showTrNotif('watch_later','Saved to Watch Later');
+// Chip context menu (channel filter chips)
+function openChipMenu(e, name){
+  e.preventDefault(); e.stopPropagation();
+  closeVmenu();
+
+  const h = isHidden(name);
+  const m = document.createElement('div');
+  m.className = 'vmenu';
+  m.tabIndex = -1;
+
+  function item(icon, label, onClick){
+    const btn = document.createElement('button');
+    btn.className = 'vmenu-item';
+    btn.innerHTML = `<span class="ms">${icon}</span><span>${label}</span>`;
+    btn.addEventListener('click', ev=>{ ev.stopPropagation(); closeVmenu(); onClick(); });
+    m.appendChild(btn);
   }
-  // Update any visible three-dot menu btn icons if menu still open
-  closeCtx();
+
+  item('open_in_new', 'Open channel', ()=>openChannel(name));
+  const d=document.createElement('div'); d.className='vmenu-divider'; m.appendChild(d);
+  item(h?'visibility':'visibility_off', h?'Show in Home feed':'Hide from Home feed', ()=>toggleHideChannel(name));
+
+  _vmenu = m;
+  // For chip menus position at click point
+  document.body.appendChild(m);
+  const vw=window.innerWidth, vh=window.innerHeight;
+  const mw=m.offsetWidth, mh=m.offsetHeight;
+  let x=e.clientX, y=e.clientY+4;
+  if(x+mw>vw-8) x=x-mw;
+  if(y+mh>vh-8) y=y-mh-8;
+  m.style.left=x+'px'; m.style.top=y+'px';
+  setTimeout(()=>{
+    document.addEventListener('click', _vmenuOutside, true);
+    document.addEventListener('keydown', _vmenuKey);
+  }, 0);
 }
 
-// Chip context menu (hide/show channel)
-function openChipMenu(e,name){
-  e.preventDefault();e.stopPropagation();
-  const menu=document.getElementById('ctx-menu');
-  const h=isHidden(name);
-  menu.innerHTML=`
-    <div class="ctx-item" onclick="closeCtx();openChannel('${esc(name).replace(/'/g,"\\'")}')"><span class="ms">open_in_new</span>Open channel</div>
-    <div class="ctx-divider"></div>
-    <div class="ctx-item" onclick="closeCtx();toggleHideChannel('${esc(name).replace(/'/g,"\\'")}')">
-      <span class="ms">${h?'visibility':'visibility_off'}</span>
-      ${h?'Show in Home feed':'Hide from Home feed'}
-    </div>`;
-  menu.style.display='block';
-  let x=e.clientX,y=e.clientY;
-  menu.style.left=x+'px';menu.style.top=y+'px';
-  requestAnimationFrame(()=>{
-    const r=menu.getBoundingClientRect();
-    const vw=window.innerWidth,vh=window.innerHeight;
-    if(r.right>vw-8)menu.style.left=(x-r.width)+'px';
-    if(r.bottom>vh-8)menu.style.top=(y-r.height)+'px';
-  });
-}
+// Legacy aliases so any remaining callers don't break
+function closeCtx(){ closeVmenu(); }
 
 // ── FETCH ──
 async function fetchUploads(chId,maxItems=50){
@@ -6056,11 +5863,11 @@ function searchCard(vid,title,channel,thumb,published,views,dur,meta,chId,chName
       <div class="search-ch-row">
         ${avatarHtml(channel,meta,'search-ch-avatar',chId||'')}
         <span class="search-ch-name search-ch-link" onclick="event.stopPropagation();${chNav}" title="Open channel">${esc(channel)}</span>
+        <button class="vid-menu-btn" style="margin-left:auto;flex-shrink:0" title="More options"
+          onclick="openVideoCtx(event,${vd},${vt},${vc},${vth},${vdr},${vpub})">
+          <span class="ms">more_vert</span>
+        </button>
       </div>
-      <button class="vid-menu-btn" style="margin-top:6px;align-self:flex-start" title="More options"
-        onclick="openVideoCtx(event,${vd},${vt},${vc},${vth},${vdr},${vpub})">
-        <span class="ms">more_vert</span>
-      </button>
     </div>
   </div>`;
 }

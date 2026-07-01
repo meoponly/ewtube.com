@@ -103,6 +103,66 @@ body.light-mode .blocked-notice-icon .ms{color:#c00}
 }
 .live-dot{
   width:8px;height:8px;border-radius:50%;background:#fff;flex-shrink:0;
+  animation:live-dot-pulse 1.2s ease infinite;
+}
+@keyframes live-dot-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── LIVE NOW SECTION ── */
+#live-section{
+  margin-bottom:28px;
+}
+.live-section-header{
+  display:flex;align-items:center;gap:10px;margin-bottom:14px;
+}
+.live-section-dot{
+  width:10px;height:10px;border-radius:50%;background:#ff0000;flex-shrink:0;
+  box-shadow:0 0 0 0 rgba(255,0,0,.5);
+  animation:live-pulse 1.6s ease infinite;
+}
+@keyframes live-pulse{
+  0%{box-shadow:0 0 0 0 rgba(255,0,0,.5)}
+  70%{box-shadow:0 0 0 8px rgba(255,0,0,0)}
+  100%{box-shadow:0 0 0 0 rgba(255,0,0,0)}
+}
+.live-section-title{font-size:16px;font-weight:700;color:var(--text);}
+.live-section-count{font-size:13px;color:var(--text3);margin-left:2px;}
+.live-cards-row{
+  display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;
+  scrollbar-width:thin;scrollbar-color:var(--border) transparent;
+}
+.live-cards-row::-webkit-scrollbar{height:4px;}
+.live-cards-row::-webkit-scrollbar-track{background:transparent;}
+.live-cards-row::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.live-card{
+  flex-shrink:0;width:300px;border-radius:12px;overflow:hidden;
+  background:var(--surface);border:1px solid var(--border);
+  transition:transform .15s,border-color .15s;cursor:pointer;text-decoration:none;display:block;
+}
+.live-card:hover{transform:translateY(-2px);border-color:rgba(255,0,0,.4);}
+.live-card-thumb{position:relative;aspect-ratio:16/9;overflow:hidden;background:var(--surface2);}
+.live-card-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.live-card-badge{
+  position:absolute;bottom:7px;left:7px;
+  background:#ff0000;color:#fff;font-size:11px;font-weight:700;
+  padding:2px 7px;border-radius:4px;letter-spacing:.05em;
+  display:flex;align-items:center;gap:4px;
+}
+.live-card-badge::before{content:'';width:7px;height:7px;border-radius:50%;background:#fff;display:inline-block;}
+.live-card-viewers{
+  position:absolute;bottom:7px;right:7px;
+  background:rgba(0,0,0,.75);color:#fff;font-size:11px;font-weight:600;
+  padding:2px 7px;border-radius:4px;
+}
+.live-card-info{padding:10px 12px 12px;}
+.live-card-title{font-size:13.5px;font-weight:600;color:var(--text);line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.live-card-ch{font-size:12px;color:var(--text3);margin-top:5px;
+  display:flex;align-items:center;gap:6px;}
+.live-card-ch-avatar{width:20px;height:20px;border-radius:50%;overflow:hidden;
+  background:var(--surface3);flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;color:var(--text2);}
+.live-card-ch-avatar img{width:100%;height:100%;object-fit:cover;}
+body.light-mode .live-card{background:#fff;}
   animation:livePulse 1.4s infinite;
 }
 @keyframes livePulse{
@@ -289,7 +349,8 @@ input{font-family:inherit}
 }
 .yt-logo{display:flex;align-items:center;cursor:pointer;flex-shrink:0;margin-right:16px;text-decoration:none}
 .yt-logo-svg{height:20px;width:auto;display:block}
-.yt-logo-img{height:42px;width:auto;display:block;object-fit:contain;image-rendering:auto;}
+.yt-logo-img{height:52px;width:auto;display:block;object-fit:contain;}
+.yt-logo-fallback{font-size:18px;font-weight:700;color:var(--text);letter-spacing:-.3px;display:none;}
 #header-search{flex:1;display:flex;align-items:center;justify-content:center}
 .search-input-wrap{
   flex:1;display:flex;align-items:center;height:40px;
@@ -2213,7 +2274,9 @@ console.log('[ewtube-sync] RTDB push layer active');
     <span class="ms">menu</span>
   </button>
   <a class="yt-logo" onclick="goHome()" style="cursor:pointer" title="Home">
-    <img class="yt-logo-img" src="deadpool.png" alt="Ewtube" onerror="this.style.display='none'"/>
+    <img class="yt-logo-img" src="deadpool.png" alt="Ewtube"
+      onerror="this.style.display='none';this.nextElementSibling.style.display='block'"/>
+    <span class="yt-logo-fallback">Ewtube</span>
   </a>
   <div id="header-search">
     <div style="position:relative;flex:1;max-width:640px;display:flex;align-items:center">
@@ -2427,6 +2490,15 @@ console.log('[ewtube-sync] RTDB push layer active');
   <div id="search-section">
     <!-- HOME FEED (shown when no search active) -->
     <div id="home-feed-wrap">
+      <!-- LIVE NOW SECTION — shown only when subscribed channels are live -->
+      <div id="live-section" style="display:none">
+        <div class="live-section-header">
+          <div class="live-section-dot"></div>
+          <span class="live-section-title">Live now</span>
+          <span class="live-section-count" id="live-section-count"></span>
+        </div>
+        <div class="live-cards-row" id="live-cards-row"></div>
+      </div>
       <!-- CONTINUE WATCHING -->
       <div id="cw-section-wrap" style="display:none" class="cw-section"></div>
       <div id="pinned-section-wrap" style="display:none">
@@ -3632,11 +3704,14 @@ async function renderHome(){
       <div style="font-size:14px">Use the search bar above — all results are shown except blocked channels</div>
     </div>`;
     document.getElementById('home-load-more').style.display='none';
+    document.getElementById('live-section').style.display='none';
     ytLoadEnd();return;
   }
   feedTitle.style.display='block';
   feed.innerHTML=skelVidGrid(8);
   document.getElementById('home-load-more').style.display='none';
+  // Fetch live streams and main feed in parallel
+  fetchLiveStreams(visibleIds).then(lives=>renderLiveSection(lives)).catch(()=>{});
   try{
     let allItems=[];
     const results=await Promise.all(visibleIds.map(chId=>
@@ -3693,7 +3768,120 @@ function renderHomePage(){
   document.getElementById('home-load-more').style.display=homeFeedItems.length>homeFeedPage*HOME_PAGE_SIZE?'block':'none';
   const pageChIds=slice.map(i=>i._chId).filter(id=>id&&!chAvatarCache[id]&&!channelMeta[findChName(id)]?.thumb);
   if(pageChIds.length)fetchAndCacheAvatars(pageChIds);
+  // Tell SW to pre-cache thumbnails for this page so they load instantly next time
+  const thumbUrls = slice.map(i=>bestThumb(i.snippet?.thumbnails,i._vid)).filter(Boolean);
+  if(thumbUrls.length) setTimeout(()=>window._swCache?.(thumbUrls), 2000);
 }
+// ── LIVE STREAMS ──
+const LS_LIVE_SEEN = 'yt_live_seen_v1';
+let _liveSeenIds = new Set(JSON.parse(localStorage.getItem(LS_LIVE_SEEN)||'[]'));
+
+async function fetchLiveStreams(chIds){
+  // Search each channel for active live streams (eventType=live)
+  // Batched to avoid hammering quota — each search costs 100 units
+  // so we only check channels with bell on first, then others
+  const bellIds = chIds.filter(id=>{
+    const name=findChName(id); return name && chNotifs[name];
+  });
+  const restIds = chIds.filter(id=>!bellIds.includes(id));
+  const prioritised = [...bellIds, ...restIds].slice(0,10); // cap at 10 channels to save quota
+
+  const results = await Promise.allSettled(prioritised.map(async chId=>{
+    const d = await api(`search?part=snippet&channelId=${chId}&eventType=live&type=video&maxResults=1`);
+    if(!d.items?.length) return null;
+    const item = d.items[0];
+    const vid = item.id?.videoId;
+    if(!vid) return null;
+    // Get live viewer count
+    let viewers = 0;
+    try{
+      const stats = await api(`videos?part=liveStreamingDetails,snippet&id=${vid}`);
+      const li = stats.items?.[0];
+      viewers = parseInt(li?.liveStreamingDetails?.concurrentViewers||0)||0;
+    }catch(e){}
+    return {
+      vid,
+      title: item.snippet.title,
+      channel: item.snippet.channelTitle,
+      thumb: item.snippet.thumbnails?.medium?.url||'',
+      chId,
+      viewers
+    };
+  }));
+  return results
+    .filter(r=>r.status==='fulfilled'&&r.value)
+    .map(r=>r.value);
+}
+
+function renderLiveSection(lives){
+  const section = document.getElementById('live-section');
+  const row = document.getElementById('live-cards-row');
+  const count = document.getElementById('live-section-count');
+  if(!lives||!lives.length){ section.style.display='none'; return; }
+  section.style.display='block';
+  count.textContent = lives.length === 1 ? '1 stream' : lives.length+' streams';
+  row.innerHTML = lives.map(l=>{
+    const chName = findChName(l.chId)||l.channel;
+    const meta = channelMeta[chName]||null;
+    const av = (l.chId&&chAvatarCache[l.chId])||meta?.thumb||'';
+    const initials = (l.channel||'?').slice(0,2).toUpperCase();
+    const viewerStr = l.viewers ? fmtViews(l.viewers)+' watching' : 'LIVE';
+    return `<a class="live-card" href="${ytLink(l.vid)}" target="_blank" rel="noopener"
+        data-hv="${esc(l.vid)}" data-ht="${esc(l.title)}" data-hc="${esc(l.channel)}" data-hi="${esc(l.chId)}">
+      <div class="live-card-thumb">
+        <img src="${esc(l.thumb)}" alt="" loading="lazy"
+          onerror="this.src='https://i.ytimg.com/vi/${esc(l.vid)}/hqdefault.jpg'"/>
+        <div class="live-card-badge">LIVE</div>
+        ${l.viewers?`<div class="live-card-viewers">${esc(fmtViews(l.viewers))} watching</div>`:''}
+      </div>
+      <div class="live-card-info">
+        <div class="live-card-title">${esc(l.title)}</div>
+        <div class="live-card-ch">
+          <div class="live-card-ch-avatar">
+            ${av?`<img src="${esc(av)}" alt=""/>`:`<span>${esc(initials)}</span>`}
+          </div>
+          <span>${esc(l.channel)}</span>
+        </div>
+      </div>
+    </a>`;
+  }).join('');
+
+  // Notify for new lives from bell channels
+  if(Notification.permission==='granted'){
+    lives.forEach(l=>{
+      if(_liveSeenIds.has(l.vid)) return; // already notified
+      const chName = findChName(l.chId)||l.channel;
+      if(!chNotifs[chName]) return; // bell not on for this channel
+      _liveSeenIds.add(l.vid);
+      localStorage.setItem(LS_LIVE_SEEN, JSON.stringify([..._liveSeenIds].slice(-100)));
+      const n = new Notification(l.channel+' is live!', {
+        body: l.title,
+        icon: channelMeta[chName]?.thumb||'channels4_profile.jpg',
+        tag: 'ewtube-live-'+l.vid
+      });
+      n.onclick = ()=>{ window.open(ytLink(l.vid),'_blank'); };
+    });
+  }
+}
+
+// Poll for live streams every 5 minutes (lighter than upload check)
+let _livePollerInterval = null;
+function startLivePoller(){
+  if(_livePollerInterval) return;
+  const chIds = channels.filter(c=>!isHidden(c)).map(c=>channelIds[c]).filter(Boolean);
+  if(!chIds.length) return;
+  _livePollerInterval = setInterval(async ()=>{
+    try{
+      const lives = await fetchLiveStreams(chIds);
+      renderLiveSection(lives);
+    }catch(e){}
+  }, 5*60*1000); // every 5 minutes
+}
+// Start poller once home is loaded (after DOMContentLoaded)
+document.addEventListener('DOMContentLoaded', ()=>{
+  setTimeout(startLivePoller, 8000); // wait 8s after load to avoid quota hit on boot
+});
+
 function loadMoreHome(){
   if(homeFeedItems.length>homeFeedPage*HOME_PAGE_SIZE){renderHomePage();}
   else{renderHome();}
@@ -7703,8 +7891,32 @@ console.log('%c[ewtube] type ewtube.help() for localStorage utils','color:#00c85
   </div>
 </div>
 
+<script>
+// ── SERVICE WORKER REGISTRATION ──
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').then(reg=>{
+      console.log('[ewtube-sw] registered, scope:', reg.scope);
+      // When SW updates, activate immediately
+      reg.addEventListener('updatefound', ()=>{
+        const newWorker = reg.installing;
+        newWorker.addEventListener('statechange', ()=>{
+          if(newWorker.state==='installed' && navigator.serviceWorker.controller){
+            console.log('[ewtube-sw] new version available');
+          }
+        });
+      });
+    }).catch(e=>console.warn('[ewtube-sw] registration failed:', e));
+  });
+}
+
+// Helper: tell the SW to pre-cache a batch of URLs (thumbnails, avatars)
+window._swCache = function(urls){
+  if(!navigator.serviceWorker?.controller || !urls?.length) return;
+  navigator.serviceWorker.controller.postMessage({ type:'CACHE_URLS', urls });
+};
+</script>
 
 </body>
 
 </html>
-

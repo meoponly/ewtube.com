@@ -3591,16 +3591,31 @@ async function resolveChannelIds(onlyUnresolved=false){
   for(const name of toResolve){
     try{
       let chId;
-      if(/^UC[\w-]{20,}$/.test(name.trim())){
-        chId=name.trim();
+      let full=null;
+      const trimmed=name.trim();
+      if(/^UC[\w-]{20,}$/.test(trimmed)){
+        // Already a raw channel ID — just fetch details (5 units)
+        chId=trimmed;
+        full=await api(`channels?part=snippet,brandingSettings,statistics,contentDetails&id=${chId}`);
+      }else if(/^@[\w.-]{2,}$/.test(trimmed)){
+        // Modern @handle — forHandle resolves + fetches details in ONE call (5 units, not 100)
+        try{ full=await api(`channels?part=snippet,brandingSettings,statistics,contentDetails&forHandle=${encodeURIComponent(trimmed)}`); }catch(e){}
+        if(full?.items?.[0]) chId=full.items[0].id;
       }else{
-        const d=await api(`search?part=snippet&type=channel&q=${encodeURIComponent(name)}&maxResults=1`);
-        if(d.items?.[0]) chId=d.items[0].snippet.channelId||d.items[0].id.channelId;
+        // Plain name — try cheap legacy-username lookup first (5 units) before falling back to search (100 units)
+        try{
+          const byUser=await api(`channels?part=snippet,brandingSettings,statistics,contentDetails&forUsername=${encodeURIComponent(trimmed)}`);
+          if(byUser.items?.[0]){ full=byUser; chId=byUser.items[0].id; }
+        }catch(e){}
+        if(!chId){
+          const d=await api(`search?part=snippet&type=channel&q=${encodeURIComponent(trimmed)}&maxResults=1`);
+          if(d.items?.[0]) chId=d.items[0].snippet.channelId||d.items[0].id.channelId;
+          if(chId) full=await api(`channels?part=snippet,brandingSettings,statistics,contentDetails&id=${chId}`);
+        }
       }
       if(!chId){console.warn('resolve: no channel found for',name);continue;}
       channelIds[name]=chId;
-      const full=await api(`channels?part=snippet,brandingSettings,statistics,contentDetails&id=${chId}`);
-      if(full.items?.[0]){
+      if(full?.items?.[0]){
         const ch=full.items[0];
         const bannerBase=ch.brandingSettings?.image?.bannerExternalUrl||'';
         channelMeta[name]={
@@ -5790,7 +5805,7 @@ async function fetchSearchPage(isMore){
     if((deepSearch||isFocusModeActive())&&!activeChFilter&&channels.length){
       // ── DEEP / FOCUS SEARCH: fan out to subscribed channels only ──
       const subChIds=channels.map(c=>channelIds[c]).filter(Boolean);
-      const BATCH=8;
+      const BATCH=4; // was 8 — each channel search = 100 units, so this halves per-search cost
       const pagedIds=isMore
         ? subChIds.filter(id=>searchNextTokenMap[id])
         : subChIds;
@@ -5827,12 +5842,14 @@ async function fetchSearchPage(isMore){
       if(pageToken)url+=`&pageToken=${pageToken}`;
       const globalPromise=api(url);
       const boostPromises=(!isMore&&boostedIds.length&&!activeChFilter)
-        ? boostedIds.slice(0,3).map(chId=>
+        ? boostedIds.slice(0,1).map(chId=>
             api(`search?part=snippet&type=video&channelId=${chId}&q=${encodeURIComponent(searchQuery)}&maxResults=20&order=${order}${paParam}${durParam}`)
               .then(d=>d.items||[]).catch(()=>[])
           )
         : [];
-      const wantPls=(searchFilter==='all'||searchFilter==='videos')&&!activeChFilter;
+      // Playlists are only ever shown on the "all" tab (see showPlaylists below) — skip the
+      // extra 100-unit search.list call entirely on the "videos" tab where it was wasted before
+      const wantPls=(searchFilter==='all')&&!activeChFilter;
       const plPromise=(!isMore&&wantPls)
         ? api(`search?part=snippet&type=playlist&q=${encodeURIComponent(searchQuery)}&maxResults=10&order=relevance`)
             .then(d=>d.items||[]).catch(()=>[])

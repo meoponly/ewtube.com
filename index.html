@@ -2136,14 +2136,6 @@ body.light-mode .about-meta-row{border-bottom:1px solid rgba(0,0,0,.05)}
 
 
 
-/* ══ IN-APP VIDEO PLAYER ══ */
-#player-overlay{
-  position:fixed;inset:0;z-index:8000;background:#000;
-  display:none;
-}
-#player-overlay.open{display:block;}
-#player-iframe-wrap{position:absolute;inset:0;}
-#player-iframe{width:100%;height:100%;border:none;display:block;}
 </style>
 
 <!-- ══ FIREBASE SYNC LAYER (Realtime Database) ══
@@ -2246,13 +2238,6 @@ console.log('[ewtube-sync] RTDB push layer active');
 </head>
 <body>
 
-<!-- ══ IN-APP VIDEO PLAYER ══ -->
-<div id="player-overlay">
-  <div id="player-iframe-wrap">
-    <iframe id="player-iframe" allowfullscreen
-      allow="autoplay; encrypted-media; picture-in-picture; web-share"></iframe>
-  </div>
-</div>
 
 <!-- YT LOADING BAR -->
 <div id="yt-loading-bar"></div>
@@ -3874,7 +3859,7 @@ function renderLiveSection(lives){
         icon: channelMeta[chName]?.thumb||'channels4_profile.jpg',
         tag: 'ewtube-live-'+l.vid
       });
-      n.onclick = ()=>{ openPlayer(l.vid,l.title||'',l.channel||'',l.chId||''); };
+      n.onclick = ()=>{ window.open(ytLink(l.vid),'_blank'); };
     });
   }
 }
@@ -3985,17 +3970,14 @@ function trackClick(channelId,vid,title,channel,thumb){
 
 // ── GLOBAL HISTORY DELEGATION ──
 // Single document mousedown catches left/middle/ctrl+click BEFORE browser opens new tab
-document.addEventListener('click', function(e){
+document.addEventListener('mousedown', function(e){
   const link = e.target.closest('a[data-hv]');
   if(!link) return;
+  // Don't track if the click was on the three-dot menu button (or any button inside the card)
   if(e.target.closest('button')) return;
-  e.preventDefault();
   const vid=link.dataset.hv, title=link.dataset.ht||'', channel=link.dataset.hc||'', chId=link.dataset.hi||'';
-  if(vid){
-    trackClick(chId, vid, title, channel, '');
-    openPlayer(vid, title, channel, chId);
-  }
-}, true); // capture phase
+  if(vid) trackClick(chId, vid, title, channel, '');
+}, true); // capture phase = fires first
 function scoreVideo(item,channelId){
   const clicks=affinity[channelId]||0;
   const age=(Date.now()-new Date(item.snippet?.publishedAt||0))/3600000;
@@ -4449,376 +4431,6 @@ function showToast(msg,type){
 }
 
 // ── TOP-RIGHT NOTIFICATION ──
-// ══ IN-APP VIDEO PLAYER + PROGRESS TRACKING ══
-const LS_PROGRESS = 'yt_vidprogress_v1';
-let _vidProgress = {}; // {vid: {t, dur, ts}}
-try{ _vidProgress = JSON.parse(localStorage.getItem(LS_PROGRESS)||'{}'); }catch(e){}
-
-function saveProgress(vid, t, dur){
-  if(!vid || t < 2) return; // ignore first 2s (accidental opens)
-  _vidProgress[vid] = {t: Math.floor(t), dur: Math.floor(dur||0), ts: Date.now()};
-  // Keep only last 500 videos
-  const keys = Object.keys(_vidProgress);
-  if(keys.length > 500){
-    keys.sort((a,b)=>(_vidProgress[a].ts||0)-(_vidProgress[b].ts||0))
-        .slice(0, keys.length-500)
-        .forEach(k=>delete _vidProgress[k]);
-  }
-  localStorage.setItem(LS_PROGRESS, JSON.stringify(_vidProgress));
-}
-
-function getProgress(vid){
-  return _vidProgress[vid] || null;
-}
-
-// Progress bar percentage (0-100), 0 if not started or near-complete (>95%)
-function getProgressPct(vid){
-  const p = _vidProgress[vid];
-  if(!p || !p.dur || !p.t) return 0;
-  const pct = (p.t / p.dur) * 100;
-  if(pct >= 95) return 0; // considered fully watched, don't show bar
-  return Math.min(Math.max(pct, 0), 100);
-}
-
-let _playerVid = null;
-let _playerYT = null;       // YT.Player instance
-let _playerInterval = null; // progress save interval
-let _prevPageTitle = '';
-
-// Load YT IFrame API (once)
-let _ytApiLoaded = false;
-function _loadYTApi(){
-  if(_ytApiLoaded || window.YT?.Player) return;
-  _ytApiLoaded = true;
-  const s = document.createElement('script');
-  s.src = 'https://www.youtube.com/iframe_api';
-  document.head.appendChild(s);
-}
-window.onYouTubeIframeAPIReady = function(){
-  // Fired when API is ready — if a video is already waiting, init the player
-  if(_playerVid) _initYTPlayer(_playerVid);
-};
-
-function _initYTPlayer(vid){
-  if(_playerYT){ try{ _playerYT.destroy(); }catch(e){} }
-  _playerYT = null;
-  clearInterval(_playerInterval);
-
-  // Replace iframe with a plain div for YT API to target
-  const wrap = document.getElementById('player-iframe-wrap');
-  wrap.innerHTML = '<div id="yt-api-player" style="width:100%;height:100%"></div>';
-
-  const saved = getProgress(vid);
-  const startSec = saved && saved.t && saved.dur && (saved.t/saved.dur) < 0.95 ? saved.t : 0;
-
-  _playerYT = new YT.Player('yt-api-player', {
-    videoId: vid,
-    playerVars: {
-      autoplay: 1, rel: 0, modestbranding: 1, iv_load_policy: 3,
-      start: startSec
-    },
-    events: {
-      onReady: (e)=>{
-        e.target.playVideo();
-        // Save total duration once available
-        const dur = e.target.getDuration();
-        if(dur > 0 && saved) saveProgress(vid, saved.t || 0, dur);
-        // Start periodic progress saving every 5 seconds
-        _playerInterval = setInterval(()=>{
-          if(!_playerVid) return;
-          try{
-            const t = _playerYT.getCurrentTime();
-            const d = _playerYT.getDuration();
-            if(t > 2) saveProgress(vid, t, d);
-          }catch(e){}
-        }, 5000);
-      },
-      onStateChange: (e)=>{
-        // Save on pause/end too
-        if(e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED){
-          try{
-            const t = _playerYT.getCurrentTime();
-            const d = _playerYT.getDuration();
-            if(t > 2) saveProgress(vid, t, d);
-            if(e.data === YT.PlayerState.ENDED) saveProgress(vid, d, d); // mark complete
-          }catch(err){}
-        }
-      },
-      onError: (e)=>{
-        // Error codes 100, 101, 150 = video unavailable or embed blocked
-        _playerEmbedFallback(vid, document.title.replace(' - Ewtube',''));
-      }
-    }
-  });
-}
-
-function openPlayer(vid, title, channel, chId){
-  if(!vid) return;
-  _playerVid = vid;
-
-  const overlay = document.getElementById('player-overlay');
-  overlay.classList.add('open');
-  document.body.style.overflow = 'hidden';
-
-  // URL routing + tab title
-  _prevPageTitle = document.title;
-  document.title = (title || 'Video') + ' - Ewtube';
-  history.pushState({ ewtubePlayer: vid }, '', '?v=' + encodeURIComponent(vid));
-
-  // Load YT IFrame API if not already loaded
-  if(window.YT?.Player){
-    _initYTPlayer(vid);
-  } else {
-    // Show spinner while API loads
-    const wrap = document.getElementById('player-iframe-wrap');
-    wrap.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#000"><div style="width:48px;height:48px;border-radius:50%;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;animation:auth-spin .8s linear infinite"></div></div>';
-    _loadYTApi();
-    // onYouTubeIframeAPIReady will call _initYTPlayer once ready
-  }
-}
-
-function _playerEmbedFallback(vid, title){
-  const wrap = document.getElementById('player-iframe-wrap');
-  wrap.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;background:#111;gap:16px">
-    <div style="font-size:56px;opacity:.25">▶</div>
-    <div style="text-align:center;max-width:360px;padding:0 24px">
-      <div style="font-size:15px;font-weight:600;color:#fff;margin-bottom:8px">${esc(title||'')}</div>
-      <div style="font-size:13px;color:rgba(255,255,255,.5);margin-bottom:20px">
-        This video can't be embedded — the channel has disabled it.</div>
-      <button onclick="window.open('https://www.youtube.com/watch?v=${esc(vid)}','_blank')"
-        style="padding:10px 24px;border-radius:20px;background:#ff0000;color:#fff;
-        border:none;font-size:14px;font-weight:600;cursor:pointer">
-        Watch on YouTube ↗
-      </button>
-    </div>
-  </div>`;
-}
-
-function closePlayer(){
-  const overlay = document.getElementById('player-overlay');
-  if(!overlay.classList.contains('open')) return;
-
-  // Save progress one last time before closing
-  if(_playerVid && _playerYT){
-    try{
-      const t = _playerYT.getCurrentTime();
-      const d = _playerYT.getDuration();
-      if(t > 2) saveProgress(_playerVid, t, d);
-    }catch(e){}
-  }
-
-  // Stop playback
-  clearInterval(_playerInterval);
-  _playerInterval = null;
-  if(_playerYT){ try{ _playerYT.destroy(); }catch(e){} _playerYT = null; }
-
-  // Restore iframe-wrap
-  const wrap = document.getElementById('player-iframe-wrap');
-  wrap.innerHTML = '<iframe id="player-iframe" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture; web-share"></iframe>';
-
-  overlay.classList.remove('open');
-  document.body.style.overflow = '';
-
-  // Restore URL + title
-  document.title = _prevPageTitle || 'Ewtube';
-  if(history.state?.ewtubePlayer) history.back();
-
-  // Refresh progress bars on cards now that we saved progress
-  _refreshVisibleProgressBars();
-
-  _playerVid = null;
-}
-
-// Update visible card progress bars without re-rendering the whole feed
-function _refreshVisibleProgressBars(){
-  document.querySelectorAll('.vid-card[data-vid], .cw-card[data-hv]').forEach(card=>{
-    const vid = card.dataset.vid || card.dataset.hv;
-    if(!vid) return;
-    const pct = getProgressPct(vid);
-    let bar = card.querySelector('.vid-watched-fill');
-    if(!bar){
-      // Card had no bar yet — create one if there's now progress
-      const thumbWrap = card.querySelector('.vid-thumb-wrap,.cw-thumb-wrap');
-      if(pct > 0 && thumbWrap && !thumbWrap.querySelector('.vid-watched-bar')){
-        thumbWrap.insertAdjacentHTML('beforeend',
-          `<div class="vid-watched-bar"><div class="vid-watched-fill" style="width:${pct.toFixed(1)}%"></div></div>`);
-      }
-    } else {
-      if(pct > 0){
-        bar.style.width = pct.toFixed(1)+'%';
-        bar.closest('.vid-watched-bar').style.display = '';
-      } else {
-        bar.closest('.vid-watched-bar').style.display = 'none';
-      }
-    }
-  });
-  // Also refresh Continue Watching section
-  renderContinueWatching();
-}
-
-// Handle browser back button
-window.addEventListener('popstate', e=>{
-  const overlay = document.getElementById('player-overlay');
-  if(overlay.classList.contains('open') && !e.state?.ewtubePlayer){
-    clearInterval(_playerInterval);
-    if(_playerVid && _playerYT){
-      try{ const t=_playerYT.getCurrentTime(),d=_playerYT.getDuration(); if(t>2)saveProgress(_playerVid,t,d); }catch(err){}
-    }
-    if(_playerYT){ try{ _playerYT.destroy(); }catch(e){} _playerYT=null; }
-    overlay.classList.remove('open');
-    const wrap = document.getElementById('player-iframe-wrap');
-    wrap.innerHTML = '<iframe id="player-iframe" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture; web-share"></iframe>';
-    document.body.style.overflow = '';
-    document.title = _prevPageTitle || 'Ewtube';
-    _refreshVisibleProgressBars();
-    _playerVid = null;
-  }
-  const params = new URLSearchParams(location.search);
-  if(params.has('v') && !overlay.classList.contains('open')){
-    openPlayer(params.get('v'), '', '', '');
-  }
-});
-
-// Open from URL on page load
-document.addEventListener('DOMContentLoaded', ()=>{
-  const params = new URLSearchParams(location.search);
-  if(params.has('v')) openPlayer(params.get('v'), '', '', '');
-});
-
-// Escape closes player
-document.addEventListener('keydown', e=>{
-  if(e.key==='Escape' && document.getElementById('player-overlay')?.classList.contains('open')){
-    e.preventDefault(); closePlayer();
-  }
-});
-
-function _playerToggleChrome(){}
-function _playerOpenChannel(){}
-
-
-
-function openPlayer(vid, title, channel, chId){
-  if(!vid) return;
-  _playerVid = vid;
-
-  const overlay = document.getElementById('player-overlay');
-  let iframe = document.getElementById('player-iframe');
-
-  // Ensure iframe exists (may have been replaced by embed-error fallback)
-  if(!iframe){
-    document.getElementById('player-iframe-wrap').innerHTML =
-      '<iframe id="player-iframe" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture; web-share"></iframe>';
-    iframe = document.getElementById('player-iframe');
-  }
-
-  iframe.src = `https://www.youtube.com/embed/${encodeURIComponent(vid)}?autoplay=1&rel=0&modestbranding=1&iv_load_policy=3`;
-
-  // Listen for embed errors (Error 150/151/100 = embedding disabled by channel)
-  window._playerEmbedErrorHandler && window.removeEventListener('message', window._playerEmbedErrorHandler);
-  window._playerEmbedErrorHandler = function(e){
-    try{
-      const d = JSON.parse(e.data);
-      if(d.event === 'infoDelivery' && d.info?.errorCode){
-        _playerEmbedFallback(vid, title);
-      }
-    }catch(err){}
-  };
-  window.addEventListener('message', window._playerEmbedErrorHandler);
-
-  overlay.classList.add('open');
-  document.body.style.overflow = 'hidden';
-
-  // ── URL routing: push ?v=VIDEO_ID to history ──
-  _prevPageTitle = document.title;
-  const cleanTitle = title || 'Video';
-  document.title = cleanTitle + ' - Ewtube';
-  history.pushState({ ewtubePlayer: vid }, '', '?v=' + encodeURIComponent(vid));
-}
-
-function _playerEmbedFallback(vid, title){
-  const wrap = document.getElementById('player-iframe-wrap');
-  wrap.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;background:#111;gap:16px">
-    <div style="font-size:56px;opacity:.25">▶</div>
-    <div style="text-align:center;max-width:360px;padding:0 24px">
-      <div style="font-size:15px;font-weight:600;color:#fff;margin-bottom:8px">${esc(title||'')}</div>
-      <div style="font-size:13px;color:rgba(255,255,255,.5);margin-bottom:20px">
-        This video can't be embedded — the channel has disabled it.</div>
-      <button onclick="window.open('https://www.youtube.com/watch?v=${esc(vid)}','_blank')"
-        style="padding:10px 24px;border-radius:20px;background:#ff0000;color:#fff;
-        border:none;font-size:14px;font-weight:600;cursor:pointer">
-        Watch on YouTube ↗
-      </button>
-    </div>
-  </div>`;
-}
-
-function closePlayer(){
-  const overlay = document.getElementById('player-overlay');
-  if(!overlay.classList.contains('open')) return;
-  overlay.classList.remove('open');
-
-  // Stop video
-  const wrap = document.getElementById('player-iframe-wrap');
-  wrap.innerHTML = '<iframe id="player-iframe" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture; web-share"></iframe>';
-
-  // Remove embed error listener
-  if(window._playerEmbedErrorHandler){
-    window.removeEventListener('message', window._playerEmbedErrorHandler);
-    window._playerEmbedErrorHandler = null;
-  }
-
-  document.body.style.overflow = '';
-
-  // ── Restore URL + tab title ──
-  document.title = _prevPageTitle || 'Ewtube';
-  if(history.state?.ewtubePlayer){
-    history.back(); // let popstate handle URL restore
-  }
-
-  _playerVid = null;
-}
-
-// Handle browser back button closing the player
-window.addEventListener('popstate', e=>{
-  const overlay = document.getElementById('player-overlay');
-  if(overlay.classList.contains('open') && !e.state?.ewtubePlayer){
-    // User pressed back — close player without pushing another history entry
-    overlay.classList.remove('open');
-    const wrap = document.getElementById('player-iframe-wrap');
-    wrap.innerHTML = '<iframe id="player-iframe" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture; web-share"></iframe>';
-    document.body.style.overflow = '';
-    document.title = _prevPageTitle || 'Ewtube';
-    if(window._playerEmbedErrorHandler){
-      window.removeEventListener('message', window._playerEmbedErrorHandler);
-      window._playerEmbedErrorHandler = null;
-    }
-    _playerVid = null;
-  }
-  // If URL has ?v= on page load (e.g. shared link), open the player
-  const params = new URLSearchParams(location.search);
-  if(params.has('v') && !overlay.classList.contains('open')){
-    openPlayer(params.get('v'), '', '', '');
-  }
-});
-
-// Open player from URL on initial page load if ?v= present
-document.addEventListener('DOMContentLoaded', ()=>{
-  const params = new URLSearchParams(location.search);
-  if(params.has('v')) openPlayer(params.get('v'), '', '', '');
-});
-
-// Escape closes player
-document.addEventListener('keydown', e=>{
-  if(e.key === 'Escape' && document.getElementById('player-overlay')?.classList.contains('open')){
-    e.preventDefault(); closePlayer();
-  }
-});
-
-function _playerToggleChrome(){} // no-op, kept for safety
-function _playerOpenChannel(){}  // no-op
-
 function showTrNotif(icon, msg, type='success'){
   let container=document.getElementById('tr-notif');
   if(!container){
@@ -5165,11 +4777,11 @@ async function loadYtPlaylistVideos(plId,token,fresh){
 
   if(fresh&&firstVid){
     const playBtn=document.getElementById('ytpl-play-btn');
-    if(playBtn)playBtn.onclick=()=>openPlayer(firstVid,'','');
+    if(playBtn)playBtn.onclick=()=>window.open(ytLink(firstVid),'_blank');
     const shuffleBtn=document.getElementById('ytpl-shuffle-btn');
     if(shuffleBtn)shuffleBtn.onclick=()=>{
       const data=list._ytplData||[];
-      if(data.length){const r=data[Math.floor(Math.random()*data.length)];openPlayer(r.vid,r.title||'',r.channel||'');}
+      if(data.length){const r=data[Math.floor(Math.random()*data.length)];window.open(ytLink(r.vid),'_blank');}
     };
   }
   if(d.nextPageToken){
@@ -5437,7 +5049,7 @@ async function loadChHomeTab(loadToken){
           <span class="ms ch-home-section-icon">play_circle</span>
           <span class="ch-home-section-title">Featured Video</span>
         </div>
-        <div class="ch-trailer-card" onclick="openPlayer('${esc(trailerId)}','Trailer',''+currentChannelName)">
+        <div class="ch-trailer-card" onclick="window.open('https://www.youtube.com/watch?v=${esc(trailerId)}','_blank')">
           <div class="ch-trailer-card-thumb">
             <img src="https://i.ytimg.com/vi/${esc(trailerId)}/mqdefault.jpg" alt="" onerror="this.src='https://i.ytimg.com/vi/${esc(trailerId)}/hqdefault.jpg'"/>
             <div class="ch-trailer-card-play"><span class="ms">play_circle</span></div>
@@ -5846,11 +5458,11 @@ async function loadPlaylistVideos(plId,token,fresh){
   renderChPlaylistRows(list,savedSort);
   if(fresh&&firstVid){
     const playBtn=document.getElementById('ch-pl-play-btn');
-    if(playBtn)playBtn.onclick=()=>openPlayer(firstVid,'','');
+    if(playBtn)playBtn.onclick=()=>window.open(ytLink(firstVid),'_blank');
     const shuffleBtn=document.getElementById('ch-pl-shuffle-btn');
     if(shuffleBtn)shuffleBtn.onclick=()=>{
       const rows=list._chPlData||[];
-      if(rows.length){const r=rows[Math.floor(Math.random()*rows.length)];openPlayer(r.vid,r.title||'',r.channel||'');}
+      if(rows.length){const r=rows[Math.floor(Math.random()*rows.length)];window.open(ytLink(r.vid),'_blank');}
     };
   }
   if(d.nextPageToken){
@@ -6579,11 +6191,9 @@ function videoCard(vid,title,channel,thumb,published,views,dur,meta,chId){
   const dateStr=fmtDate(published);
   const vd=JSON.stringify(vid);const vt=JSON.stringify(title);const vc=JSON.stringify(channel);
   const vth=JSON.stringify(thumb||'');const vdr=JSON.stringify(dur||'');const vpub=JSON.stringify(published||'');
-  // Check if already watched — use real saved progress percentage
-  const pct = getProgressPct(vid);
-  const watchedBar = pct > 0
-    ? `<div class="vid-watched-bar"><div class="vid-watched-fill" style="width:${pct.toFixed(1)}%"></div></div>`
-    : '';
+  // Check if already watched
+  const isWatched=history_.some(h=>h.vid===vid);
+  const watchedBar=isWatched?`<div class="vid-watched-bar"><div class="vid-watched-fill" style="width:85%"></div></div>`:'';
   // data-hv/ht/hc/hi used by mousedown handler for reliable history saving
   return`<div class="vid-card" data-vid="${esc(vid)}">
     <a href="${link}" target="_blank" rel="noopener noreferrer"
@@ -7343,28 +6953,24 @@ function unsubscribeChannel(chName,btn){
 function renderContinueWatching(){
   const wrap=document.getElementById('cw-section-wrap');
   if(!wrap)return;
-  // Only show videos that have real saved progress between 5% and 95%
-  const recent = history_
-    .filter((v,i,a)=>v&&v.vid&&a.findIndex(x=>x.vid===v.vid)===i)
-    .filter(v=>{ const p=getProgress(v.vid); return p&&p.t&&p.dur&&(p.t/p.dur)>0.05&&(p.t/p.dur)<0.95; })
-    .slice(0,5);
+  // Take up to 5 most recent unique history items
+  const recent=history_.filter((v,i,a)=>v&&v.vid&&a.findIndex(x=>x.vid===v.vid)===i).slice(0,5);
   if(!recent.length){wrap.style.display='none';return;}
+  // Assign varied progress values based on position (simulated)
+  const progressValues=[72,45,88,31,60];
   wrap.style.display='';
-  const cards=recent.map(item=>{
-    const pct=getProgressPct(item.vid);
-    const p=getProgress(item.vid);
-    const remaining=p&&p.dur&&p.t ? Math.max(0,Math.floor((p.dur-p.t)/60)) : 0;
-    const remStr=remaining>0?`${remaining} min left`:'';
+  const cards=recent.map((item,idx)=>{
+    const progress=progressValues[idx]||40;
     return`<a class="cw-card" href="${ytLink(item.vid)}" target="_blank" rel="noopener"
       data-hv="${esc(item.vid)}" data-ht="${esc(item.title||'')}" data-hc="${esc(item.channel||'')}" data-hi="">
       <div class="cw-thumb-wrap">
         <img src="https://i.ytimg.com/vi/${esc(item.vid)}/hqdefault.jpg" alt="" loading="lazy"
           onerror="this.src='https://i.ytimg.com/vi/${esc(item.vid)}/mqdefault.jpg'"/>
-        <div class="cw-progress-bar"><div class="cw-progress-fill" style="width:${pct.toFixed(1)}%"></div></div>
+        <div class="cw-progress-bar"><div class="cw-progress-fill" style="width:${progress}%"></div></div>
       </div>
       <div class="cw-info">
         <div class="cw-vid-title">${esc(item.title||'')}</div>
-        <div class="cw-ch">${esc(item.channel||'')}${remStr?`<span style="margin-left:6px;opacity:.6">· ${esc(remStr)}</span>`:''}</div>
+        <div class="cw-ch">${esc(item.channel||'')}</div>
       </div>
     </a>`;
   }).join('');

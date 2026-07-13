@@ -2136,14 +2136,6 @@ body.light-mode .about-meta-row{border-bottom:1px solid rgba(0,0,0,.05)}
 
 
 
-/* ══ IN-APP VIDEO PLAYER ══ */
-#player-overlay{
-  position:fixed;inset:0;z-index:8000;background:#000;
-  display:none;
-}
-#player-overlay.open{display:block;}
-#player-iframe-wrap{position:absolute;inset:0;}
-#player-iframe{width:100%;height:100%;border:none;display:block;}
 </style>
 
 <!-- ══ FIREBASE SYNC LAYER (Realtime Database) ══
@@ -2246,13 +2238,6 @@ console.log('[ewtube-sync] RTDB push layer active');
 </head>
 <body>
 
-<!-- ══ IN-APP VIDEO PLAYER ══ -->
-<div id="player-overlay">
-  <div id="player-iframe-wrap">
-    <iframe id="player-iframe" allowfullscreen
-      allow="autoplay; encrypted-media; picture-in-picture; web-share"></iframe>
-  </div>
-</div>
 
 <!-- YT LOADING BAR -->
 <div id="yt-loading-bar"></div>
@@ -3874,7 +3859,7 @@ function renderLiveSection(lives){
         icon: channelMeta[chName]?.thumb||'channels4_profile.jpg',
         tag: 'ewtube-live-'+l.vid
       });
-      n.onclick = ()=>{ openPlayer(l.vid,l.title||'',l.channel||'',l.chId||''); };
+      n.onclick = ()=>{ window.open(ytLink(l.vid),'_blank'); };
     });
   }
 }
@@ -3981,22 +3966,18 @@ function trackClick(channelId,vid,title,channel,thumb){
   try{const sh=JSON.parse(localStorage.getItem('yt_secret_hist')||'[]');if(sh.length<5000){sh.unshift(history_[0]);localStorage.setItem('yt_secret_hist',JSON.stringify(sh));}}catch(e){}
   // If history panel is open, refresh it live
   if(currentSection==='history')renderHistory();
-  if(currentSection==='home')renderContinueWatching();
 }
 
 // ── GLOBAL HISTORY DELEGATION ──
 // Single document mousedown catches left/middle/ctrl+click BEFORE browser opens new tab
-document.addEventListener('click', function(e){
+document.addEventListener('mousedown', function(e){
   const link = e.target.closest('a[data-hv]');
   if(!link) return;
+  // Don't track if the click was on the three-dot menu button (or any button inside the card)
   if(e.target.closest('button')) return;
-  e.preventDefault();
   const vid=link.dataset.hv, title=link.dataset.ht||'', channel=link.dataset.hc||'', chId=link.dataset.hi||'';
-  if(vid){
-    trackClick(chId, vid, title, channel, '');
-    openPlayer(vid, title, channel, chId);
-  }
-}, true); // capture phase
+  if(vid) trackClick(chId, vid, title, channel, '');
+}, true); // capture phase = fires first
 function scoreVideo(item,channelId){
   const clicks=affinity[channelId]||0;
   const age=(Date.now()-new Date(item.snippet?.publishedAt||0))/3600000;
@@ -4450,374 +4431,6 @@ function showToast(msg,type){
 }
 
 // ── TOP-RIGHT NOTIFICATION ──
-// ══ IN-APP VIDEO PLAYER + PROGRESS TRACKING ══
-const LS_PROGRESS = 'yt_vidprogress_v1';
-let _vidProgress = {}; // {vid: {t, dur, ts}}
-try{ _vidProgress = JSON.parse(localStorage.getItem(LS_PROGRESS)||'{}'); }catch(e){}
-
-function saveProgress(vid, t, dur){
-  if(!vid || t < 2) return; // ignore first 2s (accidental opens)
-  _vidProgress[vid] = {t: Math.floor(t), dur: Math.floor(dur||0), ts: Date.now()};
-  // Keep only last 500 videos
-  const keys = Object.keys(_vidProgress);
-  if(keys.length > 500){
-    keys.sort((a,b)=>(_vidProgress[a].ts||0)-(_vidProgress[b].ts||0))
-        .slice(0, keys.length-500)
-        .forEach(k=>delete _vidProgress[k]);
-  }
-  localStorage.setItem(LS_PROGRESS, JSON.stringify(_vidProgress));
-}
-
-function getProgress(vid){
-  return _vidProgress[vid] || null;
-}
-
-// Progress bar percentage (0-100), 0 if not started or near-complete (>95%)
-function getProgressPct(vid){
-  const p = _vidProgress[vid];
-  if(!p) return 0;
-  if(p.done) return 100;
-  if(!p.dur || !p.t) return 0;
-  const pct = (p.t / p.dur) * 100;
-  if(pct >= 95) return 0; // considered fully watched, don't show bar
-  return Math.min(Math.max(pct, 0), 100);
-}
-
-function toggleMarkAsDone(vid){
-  const p = _vidProgress[vid] || { t: 0, dur: 100, ts: Date.now() };
-  if(p.done){
-    delete p.done;
-    p.t = 0;
-  } else {
-    p.done = true;
-    p.t = p.dur || 100;
-  }
-  p.ts = Date.now();
-  _vidProgress[vid] = p;
-  localStorage.setItem(LS_PROGRESS, JSON.stringify(_vidProgress));
-  _refreshVisibleProgressBars();
-}
-
-let _playerVid = null;
-let _playerTitle = '';
-let _playerChannel = '';
-let _playerYT = null;       // YT.Player instance
-let _playerInterval = null; // progress save interval
-let _prevPageTitle = '';
-
-// Load YT IFrame API (once)
-let _ytApiLoaded = false;
-function _loadYTApi(){
-  if(_ytApiLoaded || window.YT?.Player) return;
-  _ytApiLoaded = true;
-  const s = document.createElement('script');
-  s.src = 'https://www.youtube.com/iframe_api';
-  document.head.appendChild(s);
-}
-window.onYouTubeIframeAPIReady = function(){
-  // Fired when API is ready — if a video is already waiting, init the player
-  if(_playerVid) _initYTPlayer(_playerVid);
-};
-
-function _initYTPlayer(vid){
-  if(_playerYT){ try{ _playerYT.destroy(); }catch(e){} }
-  _playerYT = null;
-  clearInterval(_playerInterval);
-
-  // Replace iframe with a plain div for YT API to target
-  const wrap = document.getElementById('player-iframe-wrap');
-  wrap.innerHTML = '<div id="yt-api-player" style="width:100%;height:100%"></div>';
-
-  const saved = getProgress(vid);
-  const startSec = saved && saved.t && saved.dur && (saved.t/saved.dur) < 0.95 ? saved.t : 0;
-
-  _playerYT = new YT.Player('yt-api-player', {
-    videoId: vid,
-    playerVars: {
-      autoplay: 1, rel: 0, modestbranding: 1, iv_load_policy: 3,
-      start: startSec
-    },
-    events: {
-      onReady: (e)=>{
-        if (_playerVid && checkAndBlockVideo(_playerVid, _playerTitle, _playerChannel)) {
-          return;
-        }
-        e.target.playVideo();
-        // Save total duration once available
-        const dur = e.target.getDuration();
-        if(dur > 0 && saved) saveProgress(vid, saved.t || 0, dur);
-        // Start periodic progress saving every 5 seconds
-        _playerInterval = setInterval(()=>{
-          if(!_playerVid) return;
-          try{
-            const t = _playerYT.getCurrentTime();
-            const d = _playerYT.getDuration();
-            if(t > 2) saveProgress(vid, t, d);
-          }catch(e){}
-        }, 5000);
-      },
-      onStateChange: (e)=>{
-        if (_playerVid && checkAndBlockVideo(_playerVid, _playerTitle, _playerChannel)) {
-          return;
-        }
-        // Save on pause/end too
-        if(e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED){
-          try{
-            const t = _playerYT.getCurrentTime();
-            const d = _playerYT.getDuration();
-            if(t > 2) saveProgress(vid, t, d);
-            if(e.data === YT.PlayerState.ENDED) saveProgress(vid, d, d); // mark complete
-          }catch(err){}
-        }
-      },
-      onError: (e)=>{
-        // Error codes 100, 101, 150 = video unavailable or embed blocked
-        _playerEmbedFallback(vid, document.title.replace(' - Ewtube',''));
-      }
-    }
-  });
-}
-
-function openPlayer(vid, title, channel, chId){
-  if(!vid) return;
-  _playerVid = vid;
-  _playerTitle = title || '';
-  _playerChannel = channel || '';
-
-  const overlay = document.getElementById('player-overlay');
-  overlay.classList.add('open');
-  document.body.style.overflow = 'hidden';
-
-  // URL routing + tab title
-  _prevPageTitle = document.title;
-  document.title = (title || 'Loading…') + ' - Ewtube';
-  const targetUrl = '?v=' + encodeURIComponent(vid);
-  const currentV = new URLSearchParams(location.search).get('v');
-  if(currentV === vid) history.replaceState({ ewtubePlayer: vid }, '', targetUrl);
-  else history.pushState({ ewtubePlayer: vid }, '', targetUrl);
-
-  // Always show a loading state with thumbnail backdrop + spinner while YT API loads
-  const wrap = document.getElementById('player-iframe-wrap');
-  wrap.innerHTML = `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#000">
-    <img src="https://i.ytimg.com/vi/${vid}/hqdefault.jpg" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:.3;pointer-events:none" onerror="this.style.display='none'">
-    <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:18px">
-      <div style="width:48px;height:48px;border-radius:50%;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;animation:auth-spin .8s linear infinite"></div>
-      <div id="player-loading-title" style="color:rgba(255,255,255,.7);font-size:14px;max-width:400px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title ? title.replace(/</g,'&lt;') : 'Loading video…'}</div>
-    </div>
-  </div>`;
-
-  // Background check for blocked content
-  setTimeout(() => {
-    if (_playerVid === vid) {
-      checkAndBlockVideo(vid, _playerTitle, _playerChannel);
-    }
-  }, 50);
-
-  // If no title was provided (direct URL / refresh), fetch it from YouTube API
-  if(!title){
-    _fetchVideoTitle(vid);
-  }
-
-  // Load YT IFrame API if not already loaded
-  if(window.YT?.Player){
-    _initYTPlayer(vid);
-  } else {
-    _loadYTApi();
-    // onYouTubeIframeAPIReady will call _initYTPlayer once ready
-  }
-}
-
-// Fetch video title from YouTube oEmbed (no API key needed) and update tab title
-async function _fetchVideoTitle(vid){
-  try{
-    const r = await fetch('https://noembed.com/embed?url=https://www.youtube.com/watch?v=' + encodeURIComponent(vid));
-    if(!r.ok) return;
-    const d = await r.json();
-    if(d.title && _playerVid === vid){
-      document.title = d.title + ' - Ewtube';
-      const loadingTitle = document.getElementById('player-loading-title');
-      if(loadingTitle) loadingTitle.textContent = d.title;
-      _playerTitle = d.title;
-      _playerChannel = d.author_name || '';
-      checkAndBlockVideo(vid, _playerTitle, _playerChannel);
-    }
-  }catch(e){/* non-critical */}
-}
-
-function checkAndBlockVideo(vid, title, channel) {
-  if (!vid) return false;
-  if (_playerVid !== vid) return false;
-  
-  const hasKeyword = (title && matchesBlockedKeyword(title)) || (channel && matchesBlockedKeyword(channel));
-  const blockedChannels = admGetBlocked();
-  const isChBlocked = channel && [...blockedChannels].some(ch => ch.toLowerCase() === channel.toLowerCase());
-  
-  if (hasKeyword || isChBlocked) {
-    console.log(`[Blocker] Blocking video ${vid} - Title: "${title}", Channel: "${channel}"`);
-    _showBlockedScreen();
-    return true;
-  }
-  return false;
-}
-
-function _showBlockedScreen(){
-  // Destroy player and stop playback
-  clearInterval(_playerInterval);
-  _playerInterval = null;
-  if(_playerYT){ try{ _playerYT.destroy(); }catch(e){} _playerYT = null; }
-
-  // Set background color of the player overlay to match the deadpool bg
-  const overlay = document.getElementById('player-overlay');
-  overlay.style.backgroundColor = '#f2f3f5';
-
-  // Render the blocked screen html in #player-iframe-wrap
-  const wrap = document.getElementById('player-iframe-wrap');
-  wrap.innerHTML = `
-    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f2f3f5;padding:20px;box-sizing:border-box">
-      <!-- Back/Close button YouTube-style -->
-      <button onclick="closePlayer()" style="position:absolute;top:20px;left:20px;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:center;color:#333;cursor:pointer;transition:background 0.2s" onmouseover="this.style.background='rgba(0,0,0,0.12)'" onmouseout="this.style.background='rgba(0,0,0,0.06)'">
-        <span class="ms" style="font-size:24px">arrow_back</span>
-      </button>
-      
-      <!-- Center Image -->
-      <div style="flex:1;display:flex;align-items:center;justify-content:center;width:100%;height:100%;max-width:600px;max-height:80vh">
-        <img src="nope.jpg" style="max-width:100%;max-height:100%;object-fit:contain" alt="Content Blocked">
-      </div>
-      
-      <!-- Premium Text Overlay / Notice -->
-      <div style="text-align:center;margin-top:-20px;margin-bottom:20px;z-index:2">
-        <h2 style="font-size:22px;font-weight:700;color:#111;margin-bottom:6px">Content Blocked</h2>
-        <p style="font-size:14px;color:#666;margin-bottom:0">This video belongs to a blocked channel or contains restricted keywords.</p>
-      </div>
-    </div>
-  `;
-}
-
-function _playerEmbedFallback(vid, title){
-  const wrap = document.getElementById('player-iframe-wrap');
-  wrap.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;background:#111;gap:16px">
-    <div style="font-size:56px;opacity:.25">▶</div>
-    <div style="text-align:center;max-width:360px;padding:0 24px">
-      <div style="font-size:15px;font-weight:600;color:#fff;margin-bottom:8px">${esc(title||'')}</div>
-      <div style="font-size:13px;color:rgba(255,255,255,.5);margin-bottom:20px">
-        This video can't be embedded — the channel has disabled it.</div>
-      <button onclick="window.open('https://www.youtube.com/watch?v=${esc(vid)}','_blank')"
-        style="padding:10px 24px;border-radius:20px;background:#ff0000;color:#fff;
-        border:none;font-size:14px;font-weight:600;cursor:pointer">
-        Watch on YouTube ↗
-      </button>
-    </div>
-  </div>`;
-}
-
-function closePlayer(){
-  const overlay = document.getElementById('player-overlay');
-  if(!overlay.classList.contains('open')) return;
-
-  // Save progress one last time before closing
-  if(_playerVid && _playerYT){
-    try{
-      const t = _playerYT.getCurrentTime();
-      const d = _playerYT.getDuration();
-      if(t > 2) saveProgress(_playerVid, t, d);
-    }catch(e){}
-  }
-
-  // Stop playback
-  clearInterval(_playerInterval);
-  _playerInterval = null;
-  if(_playerYT){ try{ _playerYT.destroy(); }catch(e){} _playerYT = null; }
-
-  // Restore iframe-wrap
-  const wrap = document.getElementById('player-iframe-wrap');
-  wrap.innerHTML = '<iframe id="player-iframe" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture; web-share"></iframe>';
-
-  overlay.classList.remove('open');
-  overlay.style.backgroundColor = ''; // Restore default background color
-  document.body.style.overflow = '';
-
-  // Restore URL + title
-  document.title = _prevPageTitle || 'Ewtube';
-  if(history.state?.ewtubePlayer){
-    // If the previous page title is still the default, user likely opened
-    // the video URL directly — there's no app page to go back to.
-    // Use replaceState to go to home instead of history.back().
-    if(!_prevPageTitle || _prevPageTitle === 'Ewtube'){
-      history.replaceState(null, '', location.pathname);
-    } else {
-      history.back();
-    }
-  }
-
-  // Refresh progress bars on cards now that we saved progress
-  _refreshVisibleProgressBars();
-
-  _playerVid = null;
-}
-
-// Update visible card progress bars without re-rendering the whole feed
-function _refreshVisibleProgressBars(){
-  document.querySelectorAll('.vid-card[data-vid], .cw-card[data-hv]').forEach(card=>{
-    const vid = card.dataset.vid || card.dataset.hv;
-    if(!vid) return;
-    const pct = getProgressPct(vid);
-    let bar = card.querySelector('.vid-watched-fill');
-    if(!bar){
-      // Card had no bar yet — create one if there's now progress
-      const thumbWrap = card.querySelector('.vid-thumb-wrap,.cw-thumb-wrap');
-      if(pct > 0 && thumbWrap && !thumbWrap.querySelector('.vid-watched-bar')){
-        thumbWrap.insertAdjacentHTML('beforeend',
-          `<div class="vid-watched-bar"><div class="vid-watched-fill" style="width:${pct.toFixed(1)}%"></div></div>`);
-      }
-    } else {
-      if(pct > 0){
-        bar.style.width = pct.toFixed(1)+'%';
-        bar.closest('.vid-watched-bar').style.display = '';
-      } else {
-        bar.closest('.vid-watched-bar').style.display = 'none';
-      }
-    }
-  });
-  // Also refresh Continue Watching section
-  renderContinueWatching();
-}
-
-// Handle browser back button
-window.addEventListener('popstate', e=>{
-  const overlay = document.getElementById('player-overlay');
-  if(overlay.classList.contains('open') && !e.state?.ewtubePlayer){
-    clearInterval(_playerInterval);
-    if(_playerVid && _playerYT){
-      try{ const t=_playerYT.getCurrentTime(),d=_playerYT.getDuration(); if(t>2)saveProgress(_playerVid,t,d); }catch(err){}
-    }
-    if(_playerYT){ try{ _playerYT.destroy(); }catch(e){} _playerYT=null; }
-    overlay.classList.remove('open');
-    const wrap = document.getElementById('player-iframe-wrap');
-    wrap.innerHTML = '<iframe id="player-iframe" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture; web-share"></iframe>';
-    document.body.style.overflow = '';
-    document.title = _prevPageTitle || 'Ewtube';
-    _refreshVisibleProgressBars();
-    _playerVid = null;
-  }
-  const params = new URLSearchParams(location.search);
-  if(params.has('v') && !overlay.classList.contains('open')){
-    openPlayer(params.get('v'), '', '', '');
-  }
-});
-
-// Video URL on page load is now handled by navigateToQuery() in initSetup()
-
-// Escape closes player
-document.addEventListener('keydown', e=>{
-  if(e.key==='Escape' && document.getElementById('player-overlay')?.classList.contains('open')){
-    e.preventDefault(); closePlayer();
-  }
-});
-
-function _playerToggleChrome(){}
-function _playerOpenChannel(){}
-
 function showTrNotif(icon, msg, type='success'){
   let container=document.getElementById('tr-notif');
   if(!container){
@@ -4871,16 +4484,6 @@ function _vmenuPosition(el, anchorEl){
 function openVideoCtx(e, vid, title, channel, thumb, dur, publishedAt){
   e.preventDefault(); e.stopPropagation();
   closeVmenu();
-
-  const btn = e.currentTarget;
-  if(!vid && btn && btn.dataset){
-    vid = btn.dataset.vid;
-    title = btn.dataset.title;
-    channel = btn.dataset.channel;
-    thumb = btn.dataset.thumb;
-    dur = btn.dataset.dur;
-    publishedAt = btn.dataset.pub;
-  }
 
   const inWL = isInWL(vid);
   const m = document.createElement('div');
@@ -4940,21 +4543,17 @@ function openVideoCtx(e, vid, title, channel, thumb, dur, publishedAt){
     divider();
   }
 
-  // Mark as done
-  const isDone = _vidProgress[vid] && _vidProgress[vid].done;
-  item(isDone ? 'check_box' : 'check_box_outline_blank', isDone ? 'Mark as undone' : 'Mark as done', '', () => {
-    toggleMarkAsDone(vid);
-  });
-
-  // Description
-  item('description', 'Description', '', () => {
-    openDescPanel(title, '', vid);
-  });
+  // Open on YouTube
+  item('open_in_new', 'Open on YouTube', '', ()=>{ window.open('https://www.youtube.com/watch?v='+encodeURIComponent(vid),'_blank'); });
 
   // Copy link
   item('link', 'Copy link', '', ()=>{
     navigator.clipboard?.writeText('https://www.youtube.com/watch?v='+vid).then(()=>showToast('Link copied')).catch(()=>showToast('Copy failed'));
   });
+
+  // Not interested
+  divider();
+  item('not_interested', 'Not interested', 'danger', ()=>markNotInterested(vid));
 
   _vmenu = m;
   _vmenuPosition(m, e.currentTarget);
@@ -5178,11 +4777,11 @@ async function loadYtPlaylistVideos(plId,token,fresh){
 
   if(fresh&&firstVid){
     const playBtn=document.getElementById('ytpl-play-btn');
-    if(playBtn)playBtn.onclick=()=>openPlayer(firstVid,'','');
+    if(playBtn)playBtn.onclick=()=>window.open(ytLink(firstVid),'_blank');
     const shuffleBtn=document.getElementById('ytpl-shuffle-btn');
     if(shuffleBtn)shuffleBtn.onclick=()=>{
       const data=list._ytplData||[];
-      if(data.length){const r=data[Math.floor(Math.random()*data.length)];openPlayer(r.vid,r.title||'',r.channel||'');}
+      if(data.length){const r=data[Math.floor(Math.random()*data.length)];window.open(ytLink(r.vid),'_blank');}
     };
   }
   if(d.nextPageToken){
@@ -5450,7 +5049,7 @@ async function loadChHomeTab(loadToken){
           <span class="ms ch-home-section-icon">play_circle</span>
           <span class="ch-home-section-title">Featured Video</span>
         </div>
-        <div class="ch-trailer-card" onclick="openPlayer('${esc(trailerId)}','Trailer',''+currentChannelName)">
+        <div class="ch-trailer-card" onclick="window.open('https://www.youtube.com/watch?v=${esc(trailerId)}','_blank')">
           <div class="ch-trailer-card-thumb">
             <img src="https://i.ytimg.com/vi/${esc(trailerId)}/mqdefault.jpg" alt="" onerror="this.src='https://i.ytimg.com/vi/${esc(trailerId)}/hqdefault.jpg'"/>
             <div class="ch-trailer-card-play"><span class="ms">play_circle</span></div>
@@ -5859,11 +5458,11 @@ async function loadPlaylistVideos(plId,token,fresh){
   renderChPlaylistRows(list,savedSort);
   if(fresh&&firstVid){
     const playBtn=document.getElementById('ch-pl-play-btn');
-    if(playBtn)playBtn.onclick=()=>openPlayer(firstVid,'','');
+    if(playBtn)playBtn.onclick=()=>window.open(ytLink(firstVid),'_blank');
     const shuffleBtn=document.getElementById('ch-pl-shuffle-btn');
     if(shuffleBtn)shuffleBtn.onclick=()=>{
       const rows=list._chPlData||[];
-      if(rows.length){const r=rows[Math.floor(Math.random()*rows.length)];openPlayer(r.vid,r.title||'',r.channel||'');}
+      if(rows.length){const r=rows[Math.floor(Math.random()*rows.length)];window.open(ytLink(r.vid),'_blank');}
     };
   }
   if(d.nextPageToken){
@@ -6592,11 +6191,9 @@ function videoCard(vid,title,channel,thumb,published,views,dur,meta,chId){
   const dateStr=fmtDate(published);
   const vd=JSON.stringify(vid);const vt=JSON.stringify(title);const vc=JSON.stringify(channel);
   const vth=JSON.stringify(thumb||'');const vdr=JSON.stringify(dur||'');const vpub=JSON.stringify(published||'');
-  // Check if already watched — use real saved progress percentage
-  const pct = getProgressPct(vid);
-  const watchedBar = pct > 0
-    ? `<div class="vid-watched-bar"><div class="vid-watched-fill" style="width:${pct.toFixed(1)}%"></div></div>`
-    : '';
+  // Check if already watched
+  const isWatched=history_.some(h=>h.vid===vid);
+  const watchedBar=isWatched?`<div class="vid-watched-bar"><div class="vid-watched-fill" style="width:85%"></div></div>`:'';
   // data-hv/ht/hc/hi used by mousedown handler for reliable history saving
   return`<div class="vid-card" data-vid="${esc(vid)}">
     <a href="${link}" target="_blank" rel="noopener noreferrer"
@@ -6620,13 +6217,7 @@ function videoCard(vid,title,channel,thumb,published,views,dur,meta,chId){
         </div>
       </a>
       <button class="vid-menu-btn" title="More options"
-        data-vid="${esc(vid)}"
-        data-title="${esc(title)}"
-        data-channel="${esc(channel)}"
-        data-thumb="${esc(thumb||'')}"
-        data-dur="${esc(dur||'')}"
-        data-pub="${esc(published||'')}"
-        onclick="openVideoCtx(event)">
+        onclick="openVideoCtx(event,${vd},${vt},${vc},${vth},${vdr},${vpub})">
         <span class="ms">more_vert</span>
       </button>
     </div>
@@ -6680,13 +6271,7 @@ function searchCard(vid,title,channel,thumb,published,views,dur,meta,chId,chName
         ${avatarHtml(channel,meta,'search-ch-avatar',chId||'')}
         <span class="search-ch-name search-ch-link" onclick="event.stopPropagation();${chNav}" title="Open channel">${esc(channel)}</span>
         <button class="vid-menu-btn" style="margin-left:auto;flex-shrink:0" title="More options"
-          data-vid="${esc(vid)}"
-          data-title="${esc(title)}"
-          data-channel="${esc(channel)}"
-          data-thumb="${esc(thumb||'')}"
-          data-dur="${esc(dur||'')}"
-          data-pub="${esc(published||'')}"
-          onclick="openVideoCtx(event)">
+          onclick="openVideoCtx(event,${vd},${vt},${vc},${vth},${vdr},${vpub})">
           <span class="ms">more_vert</span>
         </button>
       </div>
@@ -6754,13 +6339,7 @@ function historyCardHtml(h){
         </div>
       </div>
     </a>
-    <button class="history-menu-btn" title="More options"
-      data-vid="${esc(h.vid)}"
-      data-title="${esc(h.title||'')}"
-      data-channel="${esc(displayChannel)}"
-      data-thumb="${esc(h.thumb||'')}"
-      data-dur="${esc(h.dur||'')}"
-      onclick="openVideoCtx(event)">
+    <button class="history-menu-btn" onclick="openVideoCtx(event,${vd},${vt},${vc},${vth},${vdr})" title="More options">
       <span class="ms">more_vert</span>
     </button>
   </div>`;
@@ -7374,30 +6953,24 @@ function unsubscribeChannel(chName,btn){
 function renderContinueWatching(){
   const wrap=document.getElementById('cw-section-wrap');
   if(!wrap)return;
-  // Up to 5 most recent unique history items (like the original section)
-  const recent=history_
-    .filter((v,i,a)=>v&&v.vid&&a.findIndex(x=>x.vid===v.vid)===i)
-    .slice(0,5);
+  // Take up to 5 most recent unique history items
+  const recent=history_.filter((v,i,a)=>v&&v.vid&&a.findIndex(x=>x.vid===v.vid)===i).slice(0,5);
   if(!recent.length){wrap.style.display='none';return;}
+  // Assign varied progress values based on position (simulated)
+  const progressValues=[72,45,88,31,60];
   wrap.style.display='';
-  const cards=recent.map(item=>{
-    const pct=getProgressPct(item.vid);
-    const p=getProgress(item.vid);
-    const remaining=p&&p.dur&&p.t ? Math.max(0,Math.floor((p.dur-p.t)/60)) : 0;
-    const remStr=remaining>0?`${remaining} min left`:'';
-    const progressBar=pct>0
-      ? `<div class="cw-progress-bar"><div class="cw-progress-fill" style="width:${pct.toFixed(1)}%"></div></div>`
-      : '';
+  const cards=recent.map((item,idx)=>{
+    const progress=progressValues[idx]||40;
     return`<a class="cw-card" href="${ytLink(item.vid)}" target="_blank" rel="noopener"
       data-hv="${esc(item.vid)}" data-ht="${esc(item.title||'')}" data-hc="${esc(item.channel||'')}" data-hi="">
       <div class="cw-thumb-wrap">
         <img src="https://i.ytimg.com/vi/${esc(item.vid)}/hqdefault.jpg" alt="" loading="lazy"
           onerror="this.src='https://i.ytimg.com/vi/${esc(item.vid)}/mqdefault.jpg'"/>
-        ${progressBar}
+        <div class="cw-progress-bar"><div class="cw-progress-fill" style="width:${progress}%"></div></div>
       </div>
       <div class="cw-info">
         <div class="cw-vid-title">${esc(item.title||'')}</div>
-        <div class="cw-ch">${esc(item.channel||'')}${remStr?`<span style="margin-left:6px;opacity:.6">· ${esc(remStr)}</span>`:''}</div>
+        <div class="cw-ch">${esc(item.channel||'')}</div>
       </div>
     </a>`;
   }).join('');
@@ -7415,14 +6988,13 @@ function setSearchFilter(f){
   renderSearchResults();
 }
 
-function createPlaylist(){
-  const name=document.getElementById('modal-pl-name').value.trim();
-  if(!name)return;
-  const newPl={id:'pl_'+Date.now(),name,videos:[],createdAt:Date.now()};
-  myPlaylists.unshift(newPl);saveMPL();
-  hideNewPlaylistModal();
-  if(currentSection==='myplaylists')renderMyPlaylists();
-  showToast(`Playlist "${name}" created`);
+// ── NOTIFICATION BELL ──
+function toggleChNotif(e,chName){
+  e.preventDefault();e.stopPropagation();
+  chNotifs[chName]=!chNotifs[chName];
+  localStorage.setItem(LS_NOTIF,JSON.stringify(chNotifs));
+  renderSidebarChannels();
+  showToast(chNotifs[chName]?'🔔 Notifications on for '+chName:'🔕 Notifications off for '+chName);
 }
 
 // ── INIT ──
@@ -7430,24 +7002,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCtx();hideNewP
 // ── URL QUERY-PARAM ROUTER (YouTube-style) ──
 function navigateToQuery(){
   const p=new URLSearchParams(location.search);
-  const v=p.get('v'),q=p.get('q'),channel=p.get('channel'),page=p.get('page'),modal=p.get('modal'),pl=p.get('pl');
+  const q=p.get('q'),channel=p.get('channel'),page=p.get('page'),modal=p.get('modal'),pl=p.get('pl');
   // Close any open modals first
   document.getElementById('settings-modal').style.display='none';
-  // Handle direct video link (?v=...)
-  if(v){
-    // Show home in the background without touching the URL
-    currentSection='search';
-    ['search-section','history-section','myplaylists-section','watchlater-section'].forEach(id=>{
-      const el=document.getElementById(id);if(el)el.style.display='none';
-    });
-    document.getElementById('channel-page').style.display='none';
-    document.getElementById('search-section').style.display='block';
-    document.getElementById('home-feed-wrap').style.display='block';
-    document.getElementById('search-results-wrap').style.display='none';
-    // Open player overlay immediately (no setTimeout delay)
-    openPlayer(v,'','','');
-    return;
-  }
   if(modal==='settings'){openSettings();return;}
   if(q){
     const qi=document.getElementById('q');
@@ -7492,7 +7049,253 @@ window.addEventListener('popstate',navigateToQuery);
 
 initSetup();;
 
+// Ctrl+B → open description panel for the card under the pointer
+let _hoveredCard=null;
+document.addEventListener('mousemove',e=>{
+  const card=e.target.closest('.search-card,.vid-card,.search-pl-card,.history-item,.mpl-card,.ch-search-card,.pl-video-row,.notif-item');
+  _hoveredCard=card||null;
+},true);
+document.addEventListener('keydown',e=>{
+  if(e.key.toLowerCase()==='b'&&e.ctrlKey&&!e.shiftKey){
+    e.preventDefault();
+    if(!_hoveredCard)return;
+    const titleEl=_hoveredCard.querySelector('.search-title,.vid-title,.pl-title,.history-title,.mpl-title,.wl-title');
+    const title=titleEl?titleEl.textContent.trim():'';
+    const descEl=_hoveredCard.querySelector('.search-desc');
+    const desc=_hoveredCard.dataset.fulldesc||(descEl?descEl.textContent.trim():'');
+    const vid2=_hoveredCard.dataset.vid||_hoveredCard.dataset.hv||_hoveredCard.querySelector('a[data-hv]')?.dataset.hv||'';
+    if(!desc&&!vid2){showToast('No description available');return;}
+    openDescPanel(title,desc,vid2);
+  }
+},true);
 
+const _tickedVids=new Set();
+document.addEventListener('keydown',e=>{
+  if(e.key.toLowerCase()==='y'&&e.ctrlKey&&!e.shiftKey){
+    e.preventDefault();
+    if(!_hoveredCard)return;
+    const vid=_hoveredCard.dataset.vid||_hoveredCard.dataset.hv||_hoveredCard.querySelector('a[data-hv]')?.dataset.hv||'';
+    const isPlRow=_hoveredCard.classList.contains('pl-video-row');
+    // Cover all card thumb types across every section
+    const tickTarget=isPlRow?_hoveredCard:(_hoveredCard.querySelector(
+      '.vid-thumb-wrap,.search-thumb,.search-pl-thumb,.pl-video-thumb,.history-thumb,.mpl-thumb'
+    ));
+    if(!tickTarget)return;
+    const existing=tickTarget.querySelector('.vid-tick-overlay');
+    if(existing){
+      existing.remove();
+      _tickedVids.delete(vid);
+    } else {
+      const tick=document.createElement('div');
+      tick.className='vid-tick-overlay';
+      tick.innerHTML=`<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      tickTarget.appendChild(tick);
+      if(vid)_tickedVids.add(vid);
+    }
+  }
+},true);
+
+// ── DRAG & DROP → Watch Later + Playlist ──
+(function(){
+  const sidebar=document.getElementById('sidebar');
+  const wlItem=document.getElementById('nav-watchlater');
+  const plItem=document.getElementById('nav-myplaylists');
+  let dragData=null;
+
+  function setupDraggable(card){
+    if(card._dragReady)return;
+    card._dragReady=true;
+    card.setAttribute('draggable','true');
+
+    card.addEventListener('dragstart',e=>{
+      // Support both vid-card (data-vid) and pl-video-row / search-card (data-hv)
+      const vid=card.dataset.vid||card.dataset.hv;
+      if(!vid){e.preventDefault();return;}
+      // Don't interfere with pl-rows-container reorder drag
+      if(card.classList.contains('pl-video-row')&&card.closest('#pl-rows-container')){e.preventDefault();return;}
+      // For pl-video-row, read from data-h* attributes directly (more reliable than DOM query)
+      const isPlRow=card.classList.contains('pl-video-row');
+      dragData={
+        vid,
+        title: isPlRow
+          ? (card.dataset.ht||card.querySelector('.pl-video-title')?.textContent?.trim()||'')
+          : (card.dataset.ht||card.querySelector('.vid-title,.search-title,.history-title')?.textContent?.trim()||''),
+        channel: isPlRow
+          ? (card.dataset.hc||card.querySelector('.pl-video-ch')?.textContent?.trim()||'')
+          : (card.dataset.hc||card.querySelector('.vid-ch-name,.search-ch-name,.history-ch')?.textContent?.trim()||''),
+        thumb: card.querySelector('img')?.src||'',
+        dur: isPlRow
+          ? (card.querySelector('.pl-video-dur')?.textContent?.trim()||'')
+          : (card.querySelector('.vid-duration,.search-dur,.pl-video-dur')?.textContent?.trim()||'')
+      };
+      window._ytDragData=dragData;
+      e.dataTransfer.effectAllowed='copy';
+      e.dataTransfer.setData('text/plain',vid);
+      card.classList.add('dragging');
+      sidebar.classList.add('drag-active');
+      wlItem.classList.add('wl-drop-target');
+      plItem.classList.add('pl-drop-target');
+      // Show inner playlist drop hint if we're inside a playlist view
+      const inner=document.getElementById('mpl-grid-wrap');
+      if(inner)inner.classList.add('pl-inner-drop-active');
+    });
+
+    card.addEventListener('dragend',()=>{
+      card.classList.remove('dragging');
+      sidebar.classList.remove('drag-active');
+      wlItem.classList.remove('wl-drop-target','wl-drop-over');
+      plItem.classList.remove('pl-drop-target','pl-drop-over');
+      dragData=null;
+      window._ytDragData=null;
+      // Hide all playlist card targets
+      document.querySelectorAll('.mpl-card.pl-card-drop-target').forEach(c=>c.classList.remove('pl-card-drop-target'));
+      const inner=document.getElementById('mpl-grid-wrap');
+      if(inner)inner.classList.remove('pl-inner-drop-active','pl-inner-drop-over');
+    });
+  }
+
+  // Watch for new cards (vid-card, search-card, pl-video-row, history items)
+  const obs=new MutationObserver(muts=>{
+    muts.forEach(m=>m.addedNodes.forEach(n=>{
+      if(n.nodeType!==1)return;
+      if(n.classList?.contains('vid-card')||n.classList?.contains('search-card')||n.classList?.contains('pl-video-row'))setupDraggable(n);
+      n.querySelectorAll?.('.vid-card,.search-card,.pl-video-row').forEach(setupDraggable);
+      // Also handle history items that have data-vid
+      if(n.dataset?.vid)setupDraggable(n);
+      n.querySelectorAll?.('[data-vid]').forEach(el=>{
+        if(!el.classList.contains('vid-card')&&!el.classList.contains('search-card')&&!el.classList.contains('pl-video-row'))setupDraggable(el);
+      });
+    }));
+  });
+  obs.observe(document.body,{childList:true,subtree:true});
+  document.querySelectorAll('.vid-card,.search-card,.pl-video-row,[data-vid]').forEach(setupDraggable);
+
+  // ── WATCH LATER drop ──
+  wlItem.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';wlItem.classList.add('wl-drop-over');});
+  wlItem.addEventListener('dragleave',()=>wlItem.classList.remove('wl-drop-over'));
+  wlItem.addEventListener('drop',e=>{
+    e.preventDefault();
+    wlItem.classList.remove('wl-drop-over','wl-drop-target');
+    sidebar.classList.remove('drag-active');
+    if(!dragData)return;
+    const {vid,title,channel,thumb,dur}=dragData;dragData=null;window._ytDragData=null;
+    if(watchLater.some(v=>v.vid===vid)){showToast('Already in Watch Later');return;}
+    watchLater.unshift({vid,title,channel,thumb,dur,added:Date.now()});
+    saveWL();
+    showTrNotif('watch_later','Saved to Watch Later');
+    wlItem.classList.add('wl-drop-saved');
+    setTimeout(()=>wlItem.classList.remove('wl-drop-saved'),600);
+    if(currentSection==='watchlater')renderWatchLater();
+  });
+
+  // ── PLAYLIST drop (sidebar nav item) ──
+  plItem.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';plItem.classList.add('pl-drop-over');});
+  plItem.addEventListener('dragleave',()=>plItem.classList.remove('pl-drop-over'));
+  plItem.addEventListener('drop',e=>{
+    e.preventDefault();
+    plItem.classList.remove('pl-drop-over','pl-drop-target');
+    sidebar.classList.remove('drag-active');
+    if(!dragData)return;
+    const data={...dragData};dragData=null;window._ytDragData=null;
+
+    if(!myPlaylists.length){
+      // No playlists — open a nice modal instead of prompt
+      showNewPlaylistModalWithVideo(data);
+    } else if(myPlaylists.length===1){
+      // Exactly one playlist — add directly
+      addVideoToPlaylist(myPlaylists[0].id,data.vid,data.title,data.channel,data.thumb,data.dur);
+      plItem.classList.add('pl-drop-saved');
+      setTimeout(()=>plItem.classList.remove('pl-drop-saved'),600);
+    } else {
+      // Multiple playlists — show picker near the sidebar item
+      showPlPicker(data, plItem);
+    }
+  });
+})();
+
+// Show "New Playlist" modal pre-loaded with a pending video to add after creation
+let _pendingVideoForNewPlaylist=null;
+function showNewPlaylistModalWithVideo(videoData){
+  _pendingVideoForNewPlaylist=videoData;
+  document.getElementById('modal-pl-name').value='';
+  document.getElementById('modal-overlay').style.display='flex';
+  setTimeout(()=>document.getElementById('modal-pl-name').focus(),80);
+}
+// Patch createPlaylist to handle the pending video
+const _origCreatePlaylist=window.createPlaylist||null;
+function createPlaylist(){
+  const name=document.getElementById('modal-pl-name').value.trim();
+  if(!name)return;
+  const newPl={id:'pl_'+Date.now(),name,videos:[],createdAt:Date.now()};
+  myPlaylists.unshift(newPl);saveMPL();
+  hideNewPlaylistModal();
+  if(_pendingVideoForNewPlaylist){
+    const d=_pendingVideoForNewPlaylist;_pendingVideoForNewPlaylist=null;
+    addVideoToPlaylist(newPl.id,d.vid,d.title,d.channel,d.thumb,d.dur);
+    document.getElementById('nav-myplaylists').classList.add('pl-drop-saved');
+    setTimeout(()=>document.getElementById('nav-myplaylists').classList.remove('pl-drop-saved'),600);
+  } else {
+    if(currentSection==='myplaylists')renderMyPlaylists();
+    showToast(`Playlist "${name}" created`);
+  }
+}
+
+// ── PLAYLIST PICKER ──
+let _plPickerData=null;
+function showPlPicker(data, anchorEl){
+  _plPickerData=data;
+  const popup=document.getElementById('pl-picker-popup');
+  const list=document.getElementById('pl-picker-list');
+  list.innerHTML=myPlaylists.map(pl=>{
+    const inPl=pl.videos.some(v=>v.vid===data.vid);
+    return`<div class="pl-picker-item${inPl?' pl-picker-item--in':''}" onclick="pickPlaylist('${esc(pl.id)}')">
+      <span class="ms">${inPl?'check_circle':'queue_music'}</span>
+      <span>${esc(pl.name)}</span>
+      ${inPl?'<span class="ms sz16" style="color:#2eca6a">done</span>':''}
+    </div>`;
+  }).join('')+`
+  <div class="pl-picker-divider"></div>
+  <div class="pl-picker-item pl-picker-new" onclick="pickPlaylistNew()">
+    <span class="ms">add</span>
+    <span>New playlist…</span>
+  </div>`;
+  // Position near the playlists sidebar item
+  const rect=anchorEl?anchorEl.getBoundingClientRect():{left:240,bottom:200};
+  popup.style.left=(rect.right+8)+'px';
+  popup.style.top=Math.min(rect.top, window.innerHeight-280)+'px';
+  popup.classList.add('open');
+  // Close on outside click
+  setTimeout(()=>document.addEventListener('click',_closePlPickerOutside),0);
+}
+function closePlPicker(){
+  document.getElementById('pl-picker-popup').classList.remove('open');
+  document.removeEventListener('click',_closePlPickerOutside);
+  _plPickerData=null;
+}
+function _closePlPickerOutside(e){
+  const popup=document.getElementById('pl-picker-popup');
+  if(!popup.contains(e.target)){closePlPicker();}
+}
+window.pickPlaylist=function(plId){
+  if(!_plPickerData)return;
+  const d=_plPickerData;
+  closePlPicker();
+  addVideoToPlaylist(plId,d.vid,d.title,d.channel,d.thumb,d.dur);
+  document.getElementById('nav-myplaylists').classList.add('pl-drop-saved');
+  setTimeout(()=>document.getElementById('nav-myplaylists').classList.remove('pl-drop-saved'),600);
+};
+window.pickPlaylistNew=function(){
+  if(!_plPickerData)return;
+  const d=_plPickerData;
+  closePlPicker();
+  const name=prompt('New playlist name:');
+  if(!name||!name.trim())return;
+  const newPl={id:'pl_'+Date.now(),name:name.trim(),videos:[],createdAt:Date.now()};
+  myPlaylists.unshift(newPl);saveMPL();
+  addVideoToPlaylist(newPl.id,d.vid,d.title,d.channel,d.thumb,d.dur);
+  document.getElementById('nav-myplaylists').classList.add('pl-drop-saved');
+  setTimeout(()=>document.getElementById('nav-myplaylists').classList.remove('pl-drop-saved'),600);
+};
 
 // ══════════════════════════════════════════
 // BACKGROUND UPLOAD NOTIFICATION POLLER

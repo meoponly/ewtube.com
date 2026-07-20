@@ -4532,6 +4532,7 @@ function _initYTPlayer(vid){
   const startSec = saved && saved.t && saved.dur && (saved.t/saved.dur) < 0.95 ? saved.t : 0;
 
   _playerYT = new YT.Player('yt-api-player', {
+    host: 'https://www.youtube-nocookie.com',
     videoId: vid,
     playerVars: {
       autoplay: 1, rel: 0, modestbranding: 1, iv_load_policy: 3,

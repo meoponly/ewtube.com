@@ -4466,6 +4466,7 @@ function saveProgress(vid, t, dur){
         .forEach(k=>delete _vidProgress[k]);
   }
   localStorage.setItem(LS_PROGRESS, JSON.stringify(_vidProgress));
+  if(currentSection==='home') renderContinueWatching();
 }
 
 function getProgress(vid){
@@ -4587,6 +4588,9 @@ function openPlayer(vid, title, channel, chId){
   _playerChannel = channel || '';
   _playerChId = chId || '';
 
+  // Immediately track in Watch History / Continue Watching
+  trackClick(chId, vid, title, channel, '');
+
   const overlay = document.getElementById('player-overlay');
   overlay.classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -4642,6 +4646,10 @@ async function _fetchVideoTitle(vid){
       if(loadingTitle) loadingTitle.textContent = d.title;
       _playerTitle = d.title;
       _playerChannel = d.author_name || '';
+      
+      // Update Watch History / Continue Watching with fetched title and channel name
+      trackClick(_playerChId, vid, _playerTitle, _playerChannel, '');
+
       checkAndBlockVideo(vid, _playerTitle, _playerChannel, _playerChId);
     }
   }catch(e){/* non-critical */}
@@ -4698,6 +4706,14 @@ function _showBlockedScreen(reason = 'keyword'){
   clearInterval(_playerInterval);
   _playerInterval = null;
   if(_playerYT){ try{ _playerYT.destroy(); }catch(e){} _playerYT = null; }
+
+  // Clean up blocked video from Watch History and Continue Watching
+  if (_playerVid) {
+    history_ = history_.filter(h => h.vid !== _playerVid);
+    saveLS(LS_HISTORY, history_);
+    if(currentSection==='history') renderHistory();
+    if(currentSection==='home') renderContinueWatching();
+  }
 
   // Set background color of the player overlay to match the deadpool bg
   const overlay = document.getElementById('player-overlay');

@@ -2139,11 +2139,94 @@ body.light-mode .about-meta-row{border-bottom:1px solid rgba(0,0,0,.05)}
 /* ══ IN-APP VIDEO PLAYER ══ */
 #player-overlay{
   position:fixed;inset:0;z-index:8000;background:#000;
-  display:none;
+  display:none;overflow:hidden;
 }
 #player-overlay.open{display:block;}
-#player-iframe-wrap{position:absolute;inset:0;}
-#player-iframe{width:100%;height:100%;border:none;display:block;}
+#player-iframe-wrap{position:absolute;inset:0;overflow:hidden;background:#000;}
+#player-iframe-wrap iframe, #player-iframe-wrap #yt-api-player, #player-iframe-wrap #yt-api-player iframe {
+  width:100%!important;height:100%!important;border:none;display:block;
+  transform:scale(1.03);transform-origin:center center;
+}
+
+.player-top-close-btn {
+  position:absolute;top:20px;left:20px;z-index:8010;
+  width:42px;height:42px;border-radius:50%;
+  background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);
+  border:1px solid rgba(255,255,255,0.15);
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;cursor:pointer;transition:background 0.2s, transform 0.15s;
+}
+.player-top-close-btn:hover {
+  background:rgba(0,0,0,0.85);transform:scale(1.08);
+}
+.player-top-close-btn .ms { font-size:24px; }
+
+/* Pause Mask (covers YouTube's 'More Videos' pause shelf) */
+.player-pause-mask {
+  position:absolute;bottom:60px;left:0;right:0;z-index:8005;
+  height:170px;
+  background:linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.65) 60%, transparent 100%);
+  display:flex;align-items:flex-end;justify-content:center;
+  padding-bottom:20px;cursor:pointer;
+  backdrop-filter:blur(2px);
+  transition:opacity 0.2s ease;
+}
+.player-pause-content {
+  display:flex;align-items:center;gap:14px;
+  background:rgba(26,23,20,0.88);border:1px solid rgba(255,255,255,0.12);
+  padding:10px 20px;border-radius:40px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.6);
+  pointer-events:auto;
+}
+.player-resume-btn {
+  width:44px;height:44px;border-radius:50%;
+  background:var(--accent, #d4704a);border:none;color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;transition:transform 0.15s, background 0.15s;
+  flex-shrink:0;
+}
+.player-resume-btn:hover { transform:scale(1.08); background:var(--accent-hover, #c4613c); }
+.player-pause-info { display:flex;flex-direction:column;gap:2px;max-width:320px; }
+.player-pause-title { font-size:14px;font-weight:600;color:#ede8e3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.player-pause-sub { font-size:12px;color:#a09080; }
+
+/* End Screen (covers YouTube's 'More Videos' end grid) */
+.player-end-screen {
+  position:absolute;inset:0;z-index:8008;
+  background:rgba(15,13,11,0.96);
+  backdrop-filter:blur(16px);
+  display:flex;align-items:center;justify-content:center;
+  padding:24px;
+  animation:endScreenFadeIn 0.3s ease-out;
+}
+@keyframes endScreenFadeIn { from { opacity:0; transform:scale(0.98); } to { opacity:1; transform:scale(1); } }
+
+.player-end-card {
+  display:flex;flex-direction:column;align-items:center;text-align:center;
+  max-width:440px;width:100%;
+  background:var(--surface, #242018);border:1px solid var(--border, #36312b);
+  border-radius:20px;padding:36px 28px;
+  box-shadow:0 20px 60px rgba(0,0,0,0.7);
+}
+.player-end-icon {
+  width:64px;height:64px;border-radius:50%;
+  background:rgba(212,112,74,0.15);color:var(--accent, #d4704a);
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:18px;
+}
+.player-end-icon .ms { font-size:36px; }
+.player-end-title { font-size:20px;font-weight:700;color:var(--text, #ede8e3);margin-bottom:6px;line-height:1.3; }
+.player-end-channel { font-size:14px;color:var(--text2, #a09080);margin-bottom:24px; }
+.player-end-actions { display:flex;gap:12px;width:100%;justify-content:center; }
+.player-end-btn {
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:12px 24px;border-radius:24px;font-size:14px;font-weight:600;
+  cursor:pointer;transition:all 0.15s;border:none;flex:1;max-width:160px;
+}
+.player-end-btn.primary { background:var(--accent, #d4704a);color:#fff; }
+.player-end-btn.primary:hover { background:var(--accent-hover, #c4613c);transform:translateY(-1px); }
+.player-end-btn.secondary { background:var(--surface2, #2e2a24);color:var(--text, #ede8e3);border:1px solid var(--border, #36312b); }
+.player-end-btn.secondary:hover { background:var(--surface3, #3a3530);transform:translateY(-1px); }
 </style>
 
 <!-- ══ FIREBASE SYNC LAYER (Realtime Database) ══
@@ -2251,6 +2334,43 @@ console.log('[ewtube-sync] RTDB push layer active');
   <div id="player-iframe-wrap">
     <iframe id="player-iframe" allowfullscreen
       allow="autoplay; encrypted-media; picture-in-picture; web-share"></iframe>
+  </div>
+
+  <!-- Back/Close floating button -->
+  <button class="player-top-close-btn" onclick="closePlayer()" title="Back / Close (Esc)">
+    <span class="ms">arrow_back</span>
+  </button>
+
+  <!-- Custom Pause Overlay Mask to block YouTube's 'More Videos' pause shelf -->
+  <div id="player-pause-mask" class="player-pause-mask" style="display:none" onclick="_resumeFromPauseMask(event)">
+    <div class="player-pause-content">
+      <button class="player-resume-btn" onclick="_resumeFromPauseMask(event)" title="Resume Video">
+        <span class="ms" style="font-size:32px">play_arrow</span>
+      </button>
+      <div class="player-pause-info">
+        <div id="player-pause-title" class="player-pause-title">Paused</div>
+        <div id="player-pause-channel" class="player-pause-sub">Click anywhere to resume</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom End Screen Overlay to block YouTube's 'More Videos' grid -->
+  <div id="player-end-screen" class="player-end-screen" style="display:none">
+    <div class="player-end-card">
+      <div class="player-end-icon">
+        <span class="ms">check_circle</span>
+      </div>
+      <h2 id="player-end-title" class="player-end-title">Video Completed</h2>
+      <p id="player-end-channel" class="player-end-channel"></p>
+      <div class="player-end-actions">
+        <button onclick="replayPlayerVideo()" class="player-end-btn primary">
+          <span class="ms">replay</span> Replay
+        </button>
+        <button onclick="closePlayer()" class="player-end-btn secondary">
+          <span class="ms">close</span> Close
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -4521,10 +4641,67 @@ window.onYouTubeIframeAPIReady = function(){
   if(_playerVid) _initYTPlayer(_playerVid);
 };
 
+function _showPlayerEndScreen(){
+  _hidePlayerPauseMask();
+  const endScreen = document.getElementById('player-end-screen');
+  if(!endScreen) return;
+  const titleEl = document.getElementById('player-end-title');
+  const chEl = document.getElementById('player-end-channel');
+  if(titleEl) titleEl.textContent = _playerTitle || 'Video Completed';
+  if(chEl) chEl.textContent = _playerChannel ? _playerChannel : '';
+  endScreen.style.display = 'flex';
+}
+
+function _hidePlayerEndScreen(){
+  const endScreen = document.getElementById('player-end-screen');
+  if(endScreen) endScreen.style.display = 'none';
+}
+
+function replayPlayerVideo(){
+  _hidePlayerEndScreen();
+  _hidePlayerPauseMask();
+  if(_playerYT && typeof _playerYT.seekTo === 'function'){
+    try{
+      _playerYT.seekTo(0);
+      _playerYT.playVideo();
+    }catch(e){}
+  }
+}
+
+function _showPlayerPauseMask(){
+  const endScreen = document.getElementById('player-end-screen');
+  if(endScreen && endScreen.style.display === 'flex') return;
+  const mask = document.getElementById('player-pause-mask');
+  if(!mask) return;
+  const titleEl = document.getElementById('player-pause-title');
+  const chEl = document.getElementById('player-pause-channel');
+  if(titleEl) titleEl.textContent = _playerTitle || 'Paused';
+  if(chEl) chEl.textContent = _playerChannel ? _playerChannel : 'Click anywhere to resume';
+  mask.style.display = 'flex';
+}
+
+function _hidePlayerPauseMask(){
+  const mask = document.getElementById('player-pause-mask');
+  if(mask) mask.style.display = 'none';
+}
+
+function _resumeFromPauseMask(e){
+  if(e) e.stopPropagation();
+  _hidePlayerPauseMask();
+  if(_playerYT && typeof _playerYT.playVideo === 'function'){
+    try{
+      _playerYT.playVideo();
+    }catch(err){}
+  }
+}
+
 function _initYTPlayer(vid){
   if(_playerYT){ try{ _playerYT.destroy(); }catch(e){} }
   _playerYT = null;
   clearInterval(_playerInterval);
+
+  _hidePlayerEndScreen();
+  _hidePlayerPauseMask();
 
   // Replace iframe with a plain div for YT API to target
   const wrap = document.getElementById('player-iframe-wrap');
@@ -4538,6 +4715,7 @@ function _initYTPlayer(vid){
     videoId: vid,
     playerVars: {
       autoplay: 1, rel: 0, modestbranding: 1, iv_load_policy: 3,
+      showinfo: 0, controls: 1, fs: 1, disablekb: 0,
       start: startSec
     },
     events: {
@@ -4563,14 +4741,22 @@ function _initYTPlayer(vid){
         if (_playerVid && checkAndBlockVideo(_playerVid, _playerTitle, _playerChannel, _playerChId)) {
           return;
         }
-        // Save on pause/end too
-        if(e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED){
+        if(e.data === YT.PlayerState.PLAYING){
+          _hidePlayerEndScreen();
+          _hidePlayerPauseMask();
+        } else if(e.data === YT.PlayerState.PAUSED){
+          _showPlayerPauseMask();
           try{
             const t = _playerYT.getCurrentTime();
             const d = _playerYT.getDuration();
             if(t > 2) saveProgress(vid, t, d);
-            if(e.data === YT.PlayerState.ENDED) saveProgress(vid, d, d); // mark complete
           }catch(err){}
+        } else if(e.data === YT.PlayerState.ENDED){
+          try{
+            const d = _playerYT.getDuration();
+            saveProgress(vid, d, d); // mark complete
+          }catch(err){}
+          _showPlayerEndScreen();
         }
       },
       onError: (e)=>{
@@ -4583,6 +4769,8 @@ function _initYTPlayer(vid){
 
 function openPlayer(vid, title, channel, chId){
   if(!vid) return;
+  _hidePlayerEndScreen();
+  _hidePlayerPauseMask();
   _playerVid = vid;
   _playerTitle = title || '';
   _playerChannel = channel || '';
@@ -4702,6 +4890,8 @@ function checkAndBlockVideo(vid, title, channel, chId) {
 }
 
 function _showBlockedScreen(reason = 'keyword'){
+  _hidePlayerEndScreen();
+  _hidePlayerPauseMask();
   // Destroy player and stop playback
   clearInterval(_playerInterval);
   _playerInterval = null;
@@ -4749,6 +4939,8 @@ function _showBlockedScreen(reason = 'keyword'){
 }
 
 function _playerEmbedFallback(vid, title){
+  _hidePlayerEndScreen();
+  _hidePlayerPauseMask();
   const wrap = document.getElementById('player-iframe-wrap');
   wrap.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column;
     align-items:center;justify-content:center;background:#111;gap:16px">
@@ -4769,6 +4961,9 @@ function _playerEmbedFallback(vid, title){
 function closePlayer(){
   const overlay = document.getElementById('player-overlay');
   if(!overlay.classList.contains('open')) return;
+
+  _hidePlayerEndScreen();
+  _hidePlayerPauseMask();
 
   // Save progress one last time before closing
   if(_playerVid && _playerYT){

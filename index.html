@@ -4501,6 +4501,7 @@ function toggleMarkAsDone(vid){
 let _playerVid = null;
 let _playerTitle = '';
 let _playerChannel = '';
+let _playerChId = '';
 let _playerYT = null;       // YT.Player instance
 let _playerInterval = null; // progress save interval
 let _prevPageTitle = '';
@@ -4540,7 +4541,7 @@ function _initYTPlayer(vid){
     },
     events: {
       onReady: (e)=>{
-        if (_playerVid && checkAndBlockVideo(_playerVid, _playerTitle, _playerChannel)) {
+        if (_playerVid && checkAndBlockVideo(_playerVid, _playerTitle, _playerChannel, _playerChId)) {
           return;
         }
         e.target.playVideo();
@@ -4558,7 +4559,7 @@ function _initYTPlayer(vid){
         }, 5000);
       },
       onStateChange: (e)=>{
-        if (_playerVid && checkAndBlockVideo(_playerVid, _playerTitle, _playerChannel)) {
+        if (_playerVid && checkAndBlockVideo(_playerVid, _playerTitle, _playerChannel, _playerChId)) {
           return;
         }
         // Save on pause/end too
@@ -4584,6 +4585,7 @@ function openPlayer(vid, title, channel, chId){
   _playerVid = vid;
   _playerTitle = title || '';
   _playerChannel = channel || '';
+  _playerChId = chId || '';
 
   const overlay = document.getElementById('player-overlay');
   overlay.classList.add('open');
@@ -4610,7 +4612,7 @@ function openPlayer(vid, title, channel, chId){
   // Background check for blocked content
   setTimeout(() => {
     if (_playerVid === vid) {
-      checkAndBlockVideo(vid, _playerTitle, _playerChannel);
+      checkAndBlockVideo(vid, _playerTitle, _playerChannel, _playerChId);
     }
   }, 50);
 
@@ -4640,28 +4642,58 @@ async function _fetchVideoTitle(vid){
       if(loadingTitle) loadingTitle.textContent = d.title;
       _playerTitle = d.title;
       _playerChannel = d.author_name || '';
-      checkAndBlockVideo(vid, _playerTitle, _playerChannel);
+      checkAndBlockVideo(vid, _playerTitle, _playerChannel, _playerChId);
     }
   }catch(e){/* non-critical */}
 }
 
-function checkAndBlockVideo(vid, title, channel) {
+function isSubscribedChannel(channelName, chId) {
+  if (!channels || !channels.length) return false;
+  if (!channelName && !chId) return false;
+  const targetName = (channelName || '').toLowerCase().trim();
+  const targetClean = targetName.replace(/^@/, '');
+  
+  return channels.some(c => {
+    if (!c) return false;
+    const cLower = c.toLowerCase().trim();
+    const cClean = cLower.replace(/^@/, '');
+    
+    if (cLower === targetName || (cClean && cClean === targetClean)) return true;
+    if (chId && channelIds[c] && channelIds[c] === chId) return true;
+    if (chId && c === chId) return true;
+    
+    const meta = channelMeta[c];
+    if (meta) {
+      if (meta.title && meta.title.toLowerCase().trim() === targetName) return true;
+      if (meta.handle) {
+        const hClean = meta.handle.toLowerCase().trim().replace(/^@/, '');
+        if (hClean && hClean === targetClean) return true;
+      }
+    }
+    return false;
+  });
+}
+
+function checkAndBlockVideo(vid, title, channel, chId) {
   if (!vid) return false;
   if (_playerVid !== vid) return false;
   
   const hasKeyword = (title && matchesBlockedKeyword(title)) || (channel && matchesBlockedKeyword(channel));
   const blockedChannels = admGetBlocked();
   const isChBlocked = channel && [...blockedChannels].some(ch => ch.toLowerCase() === channel.toLowerCase());
+
+  // Focus Mode check: if Focus Mode is active, block videos outside subscribed channels
+  const isFocusBlocked = isFocusModeActive() && (channel || chId || _playerChannel || _playerChId) && !isSubscribedChannel(channel || _playerChannel, chId || _playerChId);
   
-  if (hasKeyword || isChBlocked) {
-    console.log(`[Blocker] Blocking video ${vid} - Title: "${title}", Channel: "${channel}"`);
-    _showBlockedScreen();
+  if (hasKeyword || isChBlocked || isFocusBlocked) {
+    console.log(`[Blocker] Blocking video ${vid} - Title: "${title}", Channel: "${channel}", Reason: ${isFocusBlocked ? 'Focus Mode' : 'Blocked Keyword/Channel'}`);
+    _showBlockedScreen(isFocusBlocked ? 'focus' : 'keyword');
     return true;
   }
   return false;
 }
 
-function _showBlockedScreen(){
+function _showBlockedScreen(reason = 'keyword'){
   // Destroy player and stop playback
   clearInterval(_playerInterval);
   _playerInterval = null;
@@ -4670,6 +4702,12 @@ function _showBlockedScreen(){
   // Set background color of the player overlay to match the deadpool bg
   const overlay = document.getElementById('player-overlay');
   overlay.style.backgroundColor = '#f2f3f5';
+
+  const isFocus = reason === 'focus';
+  const headingText = isFocus ? 'Focus Mode Active' : 'Content restricted';
+  const subText = isFocus 
+    ? `Videos outside your subscribed channels are blocked while Focus Mode is active (${formatFocusRemaining()} remaining).`
+    : 'This search is outside the allowed content categories. Try searching for educational or informational topics instead.';
 
   // Render the blocked screen html in #player-iframe-wrap
   const wrap = document.getElementById('player-iframe-wrap');
@@ -4685,10 +4723,10 @@ function _showBlockedScreen(){
         <img src="nope.jpg" style="max-width:100%;max-height:100%;object-fit:contain" alt="Content Blocked">
       </div>
       
-      <!-- Premium Text Overlay / Notice -->
-      <div style="text-align:center;margin-top:-20px;margin-bottom:20px;z-index:2">
-        <h2 style="font-size:22px;font-weight:700;color:#111;margin-bottom:6px">Content Blocked</h2>
-        <p style="font-size:14px;color:#666;margin-bottom:0">This video belongs to a blocked channel or contains restricted keywords.</p>
+      <!-- Text Overlay / Notice -->
+      <div style="text-align:center;margin-top:-20px;margin-bottom:20px;z-index:2;max-width:480px;padding:0 16px">
+        <h2 style="font-size:22px;font-weight:700;color:#111;margin-bottom:6px">${headingText}</h2>
+        <p style="font-size:14px;color:#555;line-height:1.5;margin-bottom:0">${subText}</p>
       </div>
     </div>
   `;
